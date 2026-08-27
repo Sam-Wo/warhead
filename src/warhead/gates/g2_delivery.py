@@ -297,3 +297,40 @@ def collateral_lethality_scan(
         out["significant"] = out["q"] < cfg["fdr_alpha"]
         out = out.sort_values("q").reset_index(drop=True)
     return out
+
+
+def rank_collateral_targets(
+    scan: pd.DataFrame,
+    tcga_recurrence: pd.DataFrame,
+    *,
+    indication: str,
+    gene_col: str = "gene",
+    config: dict | None = None,
+) -> pd.DataFrame:
+    """Combine the DepMap dependency-shift scan with TCGA loss recurrence to
+    produce the payload-TARGET list.
+
+    A collateral-lethality target must (WARHEAD.md G2c):
+      * show a significant leftward DepMap dependency shift on CN loss,
+      * be recurrently hemizygously lost in the indication (TCGA frequency), and
+      * not be a common essential (pan-dependent regardless of CN).
+
+    Ranked by ``collateral_score = -delta * loss_frequency`` (bigger differential
+    dependency in a more frequently deleted gene). Steps 2-3 of the spec (ChEMBL
+    chemical matter + a substitutable linker position) are the chemistry follow-up
+    and are left to the G4/G5 gates.
+    """
+    cfg = (config or load_gates())["g2"]["collateral"]
+    rec = tcga_recurrence[tcga_recurrence["indication"] == indication][
+        [gene_col, "loss_frequency", "co_deleted"]
+    ]
+    out = scan.merge(rec, on=gene_col, how="left")
+    out["loss_frequency"] = out["loss_frequency"].fillna(0.0)
+
+    out["common_essential"] = out["median_chronos_neutral"] < cfg["common_essential_chronos"]
+    out["recurrent"] = out["loss_frequency"] >= cfg["recurrence_min_frequency"]
+    out["candidate"] = (
+        out["significant"] & out["recurrent"] & ~out["common_essential"] & (out["delta"] < 0)
+    )
+    out["collateral_score"] = (-out["delta"]).clip(lower=0) * out["loss_frequency"]
+    return out.sort_values(["candidate", "collateral_score"], ascending=[False, False]).reset_index(drop=True)

@@ -20,7 +20,7 @@ Build order per `WARHEAD.md` §5. What is wired end-to-end today:
 | **G1** — potency gate (sub-nM in ≥20% lines, median Emax < 0.15) | ✅ implemented, tested |
 | **G2a** — efflux dependence (ABCB1/ABCG2), FDR-guarded | ✅ implemented, tested |
 | **G2b** — proliferation independence (the HCC lever) | ✅ implemented, tested, **report** |
-| **G2c** — collateral-lethality scan (POLR2A positive control) | ✅ implemented, tested |
+| **G2c** — collateral-lethality scan (TCGA recurrence × DepMap dependency) | ✅ implemented, tested, **report** |
 | **G3b** — orthogonal-resistance search (exatecan partner) | ✅ implemented, tested, **report** |
 | G3a, G4–G6 | 🚧 interfaces + contracts only (deferred; see `src/warhead/gates/`) |
 | Real loaders (DepMap, PRISM, CTRP, GDSC, …) | 🟡 DepMap/PRISM wired to documented schemas; rest stubbed |
@@ -40,6 +40,9 @@ warhead demo               # -> reports/proliferation_independence.{pdf,xlsx}
 
 # Run the G3b exatecan-partner search:
 warhead exatecan           # -> reports/exatecan_partner.{pdf,xlsx}
+
+# Run the G2c collateral-lethality scan (CRC + HCC):
+warhead collateral         # -> reports/collateral_lethality_{CRC,HCC}.pdf + .xlsx
 
 # Or without installing:
 PYTHONPATH=src python -m warhead demo

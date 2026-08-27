@@ -66,6 +66,11 @@ g2:
     cn_loss_threshold: -0.3      # log2 relative CN below this = hemizygous loss
     dependency_test: "mann_whitney"   # CN-loss vs CN-neutral Chronos
     fdr_alpha: 0.05
+    recurrence_min_frequency: 0.20    # gene must be lost in >= this frac of TCGA tumours
+    # Median neutral-line Chronos below this = pan-essential, exclude. Set well
+    # below POLR2A-class targets (essential-ish but with a real CN differential);
+    # on real data prefer DepMap's CommonEssentials list over this proxy.
+    common_essential_chronos: -0.85
     positive_control: POLR2A     # must recover before novel hits are trusted
     priority_targets: [ME2, POLR2A]
 

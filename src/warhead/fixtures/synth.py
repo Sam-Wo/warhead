@@ -104,10 +104,11 @@ _DT_REF = 50.0  # reference doubling time (hours)
 class SyntheticData:
     model_meta: pd.DataFrame        # ModelID, CellLineName, OncotreeLineage, doubling_time_hours, ...
     dose_response: pd.DataFrame     # compound_id, ModelID, dose_M, viability  (tidy long)
-    expression: pd.DataFrame        # ModelID, gene, expression  (ABCB1/ABCG2)
+    expression: pd.DataFrame        # ModelID, gene, expression  (ABCB1/ABCG2/SLFN11)
     chronos: pd.DataFrame           # ModelID, gene, chronos
     copy_number: pd.DataFrame       # ModelID, gene, cn_log2
     compound_truth: pd.DataFrame    # compound_id, class, prolif_beta, ...
+    tcga_recurrence: pd.DataFrame   # gene, indication, loss_frequency, co_deleted  (G2c)
 
 
 def _make_models(rng: np.random.Generator, n: int) -> pd.DataFrame:
@@ -194,10 +195,12 @@ def make(seed: int = 20260827, n_lines: int = 80) -> SyntheticData:
     )
 
     chronos, copy_number = _make_collateral(rng, models["ModelID"].tolist())
+    tcga_recurrence = _make_tcga_recurrence()
 
     model_meta = models.drop(columns=["_ABCB1", "_ABCG2", "_SLFN11"])
     compound_truth = pd.DataFrame(truth_rows)
-    return SyntheticData(model_meta, dose_response, expression, chronos, copy_number, compound_truth)
+    return SyntheticData(model_meta, dose_response, expression, chronos, copy_number,
+                         compound_truth, tcga_recurrence)
 
 
 def _make_collateral(rng: np.random.Generator, model_ids: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -219,3 +222,30 @@ def _make_collateral(rng: np.random.Generator, model_ids: list[str]) -> tuple[pd
             cn_rows.append({"ModelID": mid, "gene": gene, "cn_log2": float(c)})
             ch_rows.append({"ModelID": mid, "gene": gene, "chronos": float(ch)})
     return pd.DataFrame(ch_rows), pd.DataFrame(cn_rows)
+
+
+def _make_tcga_recurrence() -> pd.DataFrame:
+    """Per-gene hemizygous-loss frequency in TCGA-COAD/READ and TCGA-LIHC.
+
+    A collateral-lethality TARGET must be BOTH recurrently lost in the indication
+    (this table) AND show a DepMap dependency shift on loss. POLR2A (17p, co-del
+    TP53) is the positive control - recurrently lost in both indications. ME2 (18q,
+    co-del SMAD4) is CRC-enriched. TP53 is recurrently lost but is the anchor
+    tumour-suppressor, not a payload target (no dependency on its own loss);
+    housekeeping / oncogene genes are not recurrently lost.
+    """
+    rows = [
+        ("POLR2A", "CRC", 0.55, "TP53"),
+        ("POLR2A", "HCC", 0.45, "TP53"),
+        ("ME2",    "CRC", 0.50, "SMAD4"),
+        ("ME2",    "HCC", 0.10, "SMAD4"),
+        ("TP53",   "CRC", 0.60, None),
+        ("TP53",   "HCC", 0.50, None),
+        ("GAPDH",  "CRC", 0.05, None),
+        ("GAPDH",  "HCC", 0.04, None),
+        ("ACTB",   "CRC", 0.06, None),
+        ("ACTB",   "HCC", 0.05, None),
+        ("KRAS",   "CRC", 0.03, None),
+        ("KRAS",   "HCC", 0.03, None),
+    ]
+    return pd.DataFrame(rows, columns=["gene", "indication", "loss_frequency", "co_deleted"])

@@ -16,8 +16,17 @@ from .config import load_gates
 from .curves.qc import qc_flags, summarise_qc
 from .curves.refit import refit_frame
 from .gates.g1_potency import gate_g1
-from .gates.g2_delivery import gate_g2b, proliferation_stats, sensitivity_from_fits
+from .gates.g2_delivery import (
+    collateral_lethality_scan,
+    gate_g2b,
+    proliferation_stats,
+    rank_collateral_targets,
+    sensitivity_from_fits,
+)
 from .gates.g3_moa import run_partner_search_from_expression
+
+# CRC = COAD + READ; HCC = LIHC (WARHEAD.md scope).
+_INDICATION_ONCOTREE = {"CRC": {"COAD", "READ"}, "HCC": {"LIHC"}}
 
 
 @dataclass
@@ -28,6 +37,7 @@ class CascadeState:
     g2b_stats: pd.DataFrame | None = None
     g2b: Any = None
     g3b: pd.DataFrame | None = None
+    g2c: pd.DataFrame | None = None
     provenance: list[dict] = field(default_factory=list)
 
     def add(self, step: str, info: dict) -> None:
@@ -115,6 +125,53 @@ def run_g3b_slice(
             "n_candidates": len(g3b),
             "n_partner_candidates": int(g3b["is_partner_candidate"].sum()) if len(g3b) else 0,
             "top_partner": g3b.iloc[0]["compound_id"] if len(g3b) else None,
+        },
+    )
+    return state
+
+
+def run_g2c_slice(
+    chronos: pd.DataFrame,
+    copy_number: pd.DataFrame,
+    tcga_recurrence: pd.DataFrame,
+    model_meta: pd.DataFrame,
+    *,
+    indication: str = "CRC",
+    config: dict | None = None,
+) -> CascadeState:
+    """G2c collateral-lethality scan for one indication (CRC or HCC).
+
+    Restricts DepMap lines to the indication's lineages, runs the CN-loss vs
+    CN-neutral Chronos scan, then joins TCGA loss recurrence to produce the ranked
+    payload-target list. Does not use curve refit - it is dependency/CN based.
+    """
+    cfg = config or load_gates()
+    state = CascadeState()
+
+    codes = _INDICATION_ONCOTREE.get(indication.upper())
+    if codes:
+        ind_models = model_meta[model_meta["OncotreeCode"].isin(codes)]["ModelID"].tolist()
+    else:
+        ind_models = None  # whole panel
+
+    scan = collateral_lethality_scan(
+        chronos, copy_number, indication_models=ind_models, config=cfg
+    )
+    targets = rank_collateral_targets(
+        scan, tcga_recurrence, indication=indication.upper(), config=cfg
+    )
+    state.g2c = targets
+
+    pc = cfg["g2"]["collateral"]["positive_control"]
+    pc_row = targets[targets["gene"] == pc]
+    state.add(
+        "G2c",
+        {
+            "indication": indication.upper(),
+            "n_genes_tested": len(targets),
+            "n_candidate_targets": int(targets["candidate"].sum()),
+            "positive_control": pc,
+            "positive_control_recovered": bool(pc_row["candidate"].iloc[0]) if len(pc_row) else False,
         },
     )
     return state

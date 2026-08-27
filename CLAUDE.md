@@ -36,10 +36,14 @@ Two program questions the cascade must answer directly:
 ## Current state (build order §5)
 
 Wired + tested: identity, G1 refit (+censoring) & potency gate, G2a efflux,
-**G2b proliferation independence (+ PDF report)**, G2c collateral lethality,
+**G2b proliferation independence (+ PDF report)**, **G2c collateral lethality
+(TCGA recurrence x DepMap dependency; POLR2A control; + PDF report)**,
 **G3b orthogonal-resistance / exatecan partner (+ PDF report)**.
 Deferred (contracts only): G3a MOA embedding, G4 bystander, G5 conjugation,
 G6 window.
+
+CLI: `warhead demo` (G2b), `warhead collateral` (G2c), `warhead exatecan` (G3b),
+`warhead g2b --raw-dir` (real data), `warhead info`.
 
 Loaders: DepMap + PRISM wired to documented schemas; others stubbed in `io/`.
 The synthetic fixture (`fixtures/synth.py`) matches the real loader schemas, so

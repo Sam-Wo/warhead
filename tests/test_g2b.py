@@ -3,6 +3,7 @@ planted proliferation dependence and separate mitotic from non-mitotic classes.
 """
 import pandas as pd
 
+from warhead.cascade import run_g2c_slice
 from warhead.gates.g2_delivery import (
     collateral_lethality_scan,
     gate_g2a,
@@ -53,3 +54,19 @@ def test_collateral_recovers_polr2a(synth):
     assert row["delta"] < 0            # CN loss -> more dependent
     assert row["significant"]           # positive control recovers
     assert not scan.set_index("gene").loc["GAPDH", "significant"]
+
+
+def test_g2c_target_list_crc(synth):
+    # Full G2c: dependency shift x TCGA recurrence -> ranked payload targets.
+    state = run_g2c_slice(synth.chronos, synth.copy_number, synth.tcga_recurrence,
+                          synth.model_meta, indication="CRC")
+    t = state.g2c.set_index("gene")
+    # POLR2A is the mandatory positive control: recurrent loss + dependency shift.
+    assert bool(t.loc["POLR2A", "candidate"])
+    # ME2 (18q, CRC-enriched) also recovers as a candidate.
+    assert bool(t.loc["ME2", "candidate"])
+    # TP53 is recurrently lost but is the anchor, not a target (no dependency shift).
+    assert not bool(t.loc["TP53", "candidate"])
+    # Housekeeping genes are common essentials, excluded despite any signal.
+    assert bool(t.loc["GAPDH", "common_essential"])
+    assert not bool(t.loc["GAPDH", "candidate"])

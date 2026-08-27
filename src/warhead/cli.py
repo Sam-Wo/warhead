@@ -4,6 +4,8 @@
                             write reports/proliferation_independence.{pdf,xlsx}
     warhead exatecan        run the G3b exatecan-partner search on the fixture and
                             write reports/exatecan_partner.{pdf,xlsx}
+    warhead collateral      run the G2c collateral-lethality scan (CRC + HCC) and
+                            write reports/collateral_lethality_*.{pdf,xlsx}
     warhead g2b  --raw-dir  run the G2b slice on real PRISM + DepMap data
     warhead info            print the resolved gate thresholds and repo paths
 """
@@ -113,6 +115,43 @@ def cmd_exatecan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_collateral(args: argparse.Namespace) -> int:
+    from .cascade import run_g2c_slice
+    from .fixtures import make
+    from .reporting import render_collateral_report
+
+    ensure_dirs()
+    cfg = load_gates()
+    data = make(seed=args.seed, n_lines=args.n_lines)
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    frames = {}
+    for indication in ("CRC", "HCC"):
+        state = run_g2c_slice(data.chronos, data.copy_number, data.tcga_recurrence,
+                              data.model_meta, indication=indication, config=cfg)
+        targets = state.g2c
+        frames[indication] = targets
+        prov = state.provenance[-1]
+        print(f"\n=== G2c {indication} ===  candidate targets = {prov['n_candidate_targets']}"
+              f"  |  {prov['positive_control']} recovered = {prov['positive_control_recovered']}")
+        cols = ["gene", "delta", "q", "loss_frequency", "common_essential", "candidate", "collateral_score"]
+        with pd.option_context("display.width", 130, "display.max_columns", None):
+            print(targets[cols].to_string(index=False))
+        pdf = render_collateral_report(
+            targets, data.chronos, data.copy_number, indication=indication,
+            out_path=out_dir / f"collateral_lethality_{indication}.pdf", config=cfg,
+        )
+        print(f"wrote {pdf}")
+
+    xlsx = out_dir / "collateral_lethality_crc_hcc.xlsx"
+    with pd.ExcelWriter(xlsx, engine="openpyxl") as xw:
+        for indication, targets in frames.items():
+            targets.to_excel(xw, sheet_name=indication, index=False)
+    print(f"\nwrote {xlsx}")
+    return 0
+
+
 def cmd_g2b(args: argparse.Namespace) -> int:
     from .cascade import run_g2b_slice
     from .io.depmap import load_model_metadata
@@ -163,6 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--out", default=str(REPORTS))
     e.add_argument("--no-g1-filter", action="store_true")
     e.set_defaults(func=cmd_exatecan)
+
+    c = sub.add_parser("collateral", help="G2c collateral-lethality scan (CRC + HCC) on the fixture")
+    c.add_argument("--seed", type=int, default=7)
+    c.add_argument("--n-lines", type=int, default=80)
+    c.add_argument("--out", default=str(REPORTS))
+    c.set_defaults(func=cmd_collateral)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

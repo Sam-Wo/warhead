@@ -86,7 +86,7 @@ def benjamini_hochberg(pvals: np.ndarray) -> np.ndarray:
     return out
 
 
-def balance_weights(values: np.ndarray, n_bins: int = 5) -> np.ndarray:
+def balance_weights(values: np.ndarray, n_bins: int = 5, cap: float = 5.0) -> np.ndarray:
     """Weights that equalise the influence of equal-WIDTH bins of ``values``.
 
     Corrects pooled-PRISM under-representation of slow-growing lines
@@ -95,6 +95,11 @@ def balance_weights(values: np.ndarray, n_bins: int = 5) -> np.ndarray:
     dominated by the over-sampled fast lines. (Equal-COUNT / quantile bins would
     not do this - by construction they hold equal numbers, so they cannot
     up-weight a rare region.)
+
+    Weights are trimmed to ``[1/cap, cap]`` before renormalising. Uncapped
+    inverse-frequency weights let a near-empty bin's one or two lines dominate the
+    regression, which explodes the slope variance; capping keeps the correction
+    while bounding any single line's leverage.
     """
     v = np.asarray(values, dtype=float)
     w = np.ones_like(v)
@@ -114,6 +119,8 @@ def balance_weights(values: np.ndarray, n_bins: int = 5) -> np.ndarray:
         cnt = int(sel.sum())
         if cnt > 0:
             w[sel] = target / cnt
-    # Normalise so mean weight over finite entries is 1.
+    # Normalise to mean 1, trim leverage, renormalise.
+    w[finite] *= finite.sum() / w[finite].sum()
+    w[finite] = np.clip(w[finite], 1.0 / cap, cap)
     w[finite] *= finite.sum() / w[finite].sum()
     return w

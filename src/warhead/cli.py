@@ -2,7 +2,9 @@
 
     warhead demo            run the G1->G2b slice on the synthetic fixture and
                             write reports/proliferation_independence.{pdf,xlsx}
-    warhead g2b  --raw-dir  run the same slice on real PRISM + DepMap data
+    warhead exatecan        run the G3b exatecan-partner search on the fixture and
+                            write reports/exatecan_partner.{pdf,xlsx}
+    warhead g2b  --raw-dir  run the G2b slice on real PRISM + DepMap data
     warhead info            print the resolved gate thresholds and repo paths
 """
 from __future__ import annotations
@@ -78,6 +80,39 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_exatecan(args: argparse.Namespace) -> int:
+    from .cascade import run_g3b_slice
+    from .fixtures import make
+    from .reporting import render_exatecan_report
+
+    ensure_dirs()
+    cfg = load_gates()
+    data = make(seed=args.seed, n_lines=args.n_lines)
+    state = run_g3b_slice(data.dose_response, data.expression, config=cfg,
+                          apply_g1_filter=not args.no_g1_filter)
+
+    g3b = state.g3b
+    print(f"\nG1: {state.g1.n_pass}/{state.g1.n_in} compounds pass potency gate")
+    print(f"G3b: {int(g3b['is_partner_candidate'].sum())}/{len(g3b)} orthogonal partner candidates")
+    cols = ["rank", "compound_id", "slfn11_slope", "orthogonality", "resistant_potency",
+            "is_partner_candidate"]
+    with pd.option_context("display.width", 130, "display.max_columns", None):
+        print("\nexatecan-partner ranking (top orthogonal potency first):")
+        print(g3b[cols].to_string(index=False))
+    print(f"\n=> empirical top partner: {g3b.iloc[0]['compound_id']}")
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pdf = render_exatecan_report(g3b, state.sensitivity, data.expression,
+                                 out_path=out_dir / "exatecan_partner.pdf", config=cfg)
+    xlsx = out_dir / "exatecan_partner.xlsx"
+    with pd.ExcelWriter(xlsx, engine="openpyxl") as xw:
+        g3b.to_excel(xw, sheet_name="partner_ranking", index=False)
+        pd.DataFrame(state.provenance).to_excel(xw, sheet_name="provenance", index=False)
+    print(f"\nwrote {pdf}\nwrote {xlsx}")
+    return 0
+
+
 def cmd_g2b(args: argparse.Namespace) -> int:
     from .cascade import run_g2b_slice
     from .io.depmap import load_model_metadata
@@ -115,12 +150,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("demo", help="run the G1->G2b slice on the synthetic fixture")
-    d.add_argument("--seed", type=int, default=20260827)
-    d.add_argument("--n-lines", type=int, default=60)
+    d.add_argument("--seed", type=int, default=7)
+    d.add_argument("--n-lines", type=int, default=80)
     d.add_argument("--out", default=str(REPORTS))
     d.add_argument("--no-g1-filter", action="store_true",
                    help="run G2b on all compounds, not just G1 passers")
     d.set_defaults(func=cmd_demo)
+
+    e = sub.add_parser("exatecan", help="G3b orthogonal-resistance (exatecan partner) on the fixture")
+    e.add_argument("--seed", type=int, default=7)
+    e.add_argument("--n-lines", type=int, default=80)
+    e.add_argument("--out", default=str(REPORTS))
+    e.add_argument("--no-g1-filter", action="store_true")
+    e.set_defaults(func=cmd_exatecan)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

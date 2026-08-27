@@ -21,7 +21,8 @@ Build order per `WARHEAD.md` §5. What is wired end-to-end today:
 | **G2a** — efflux dependence (ABCB1/ABCG2), FDR-guarded | ✅ implemented, tested |
 | **G2b** — proliferation independence (the HCC lever) | ✅ implemented, tested, **report** |
 | **G2c** — collateral-lethality scan (POLR2A positive control) | ✅ implemented, tested |
-| G3–G6 | 🚧 interfaces + contracts only (deferred; see `src/warhead/gates/`) |
+| **G3b** — orthogonal-resistance search (exatecan partner) | ✅ implemented, tested, **report** |
+| G3a, G4–G6 | 🚧 interfaces + contracts only (deferred; see `src/warhead/gates/`) |
 | Real loaders (DepMap, PRISM, CTRP, GDSC, …) | 🟡 DepMap/PRISM wired to documented schemas; rest stubbed |
 
 Nothing in the cascade requires the real datasets to *run*: the synthetic fixture
@@ -36,6 +37,9 @@ pip install -e .            # or: pip install -e '.[chem,dev]'  for RDKit + pyte
 
 # Run the G1 -> G2b slice on the synthetic fixture and write the deliverables:
 warhead demo               # -> reports/proliferation_independence.{pdf,xlsx}
+
+# Run the G3b exatecan-partner search:
+warhead exatecan           # -> reports/exatecan_partner.{pdf,xlsx}
 
 # Or without installing:
 PYTHONPATH=src python -m warhead demo
@@ -60,6 +64,26 @@ line's IC50. The pipeline refits every curve, then G2b regresses recovered
 
 exactly the ordering `WARHEAD.md` §G2b predicts. `reports/proliferation_independence.pdf`
 is the standalone figure for the MASH-HCC ADC argument.
+
+### What `warhead exatecan` demonstrates (G3b)
+
+The fixture also plants an SLFN11 (Top1i-sensitising) axis and an ATRi-like
+compound that is potent specifically on SLFN11-low, Top1i-resistant lines. The
+search removes the ABCB1 (efflux) component of each compound's sensitivity, then
+ranks by residual potency on the lines exatecan cannot handle:
+
+- the planted **ATRi partner ranks #1** by a clear margin (corroborating the lead)
+- the **Top1i compounds sink to the bottom** — they share the resistance mechanism,
+  so they are the worst partners for themselves
+
+`reports/exatecan_partner.pdf` is the standalone figure for the dual-payload
+program (WARHEAD.md §G3b).
+
+> **Fixture note.** The synthetic fixture uses a fixed seed and ~80 cell lines,
+> with the three planted axes (doubling time → G2b, ABCB1 → G2a, SLFN11 → G3b)
+> made mutually orthogonal so each gate is validated in isolation. It exists to
+> prove the pipeline recovers known structure, not to look like a specific real
+> dataset. Real screens (~800–900 lines) are wired through the same code path.
 
 ## Layout
 

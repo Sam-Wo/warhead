@@ -36,9 +36,10 @@ Two program questions the cascade must answer directly:
 ## Current state (build order §5)
 
 Wired + tested: identity, G1 refit (+censoring) & potency gate, G2a efflux,
-**G2b proliferation independence (+ PDF report)**, G2c collateral lethality.
-Deferred (contracts only in `gates/g3..g6.py`): G3 MOA/orthogonal-resistance,
-G4 bystander, G5 conjugation, G6 window.
+**G2b proliferation independence (+ PDF report)**, G2c collateral lethality,
+**G3b orthogonal-resistance / exatecan partner (+ PDF report)**.
+Deferred (contracts only): G3a MOA embedding, G4 bystander, G5 conjugation,
+G6 window.
 
 Loaders: DepMap + PRISM wired to documented schemas; others stubbed in `io/`.
 The synthetic fixture (`fixtures/synth.py`) matches the real loader schemas, so
@@ -66,5 +67,6 @@ Python is available here as the `py` launcher (3.13). Use `py -m pytest`, etc.
 ## Deliverables (§7)
 
 `reports/warhead_shortlist.xlsx`, `reports/proliferation_independence.pdf` (G2b —
-done), `reports/exatecan_partner.pdf` (G3b), `reports/collateral_lethality_crc_hcc.xlsx`
-(G2c), + threshold sensitivity across all gates.
+done), `reports/exatecan_partner.pdf` (G3b — done),
+`reports/collateral_lethality_crc_hcc.xlsx` (G2c), + threshold sensitivity across
+all gates.

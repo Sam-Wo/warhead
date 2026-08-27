@@ -78,6 +78,8 @@ g3:
   orthogonal_resistance:
     covariate: "SLFN11"          # sensitising axis for Top1i; regress it out
     stratify_by: "ABCB1"         # so residual potency is not just efflux escape
+    resistant_quantile: 0.333    # SLFN11 lower tertile = Top1i-resistant lines
+    partner_slfn11_slope_max: 0.1  # a partner must not itself depend on SLFN11
     top_n: 50
 
 # ---------------------------------------------------------------------------

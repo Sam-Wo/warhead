@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "warhead"
+version = "0.1.0"
+description = "Public-data cascade for prioritising novel ADC payload classes (CRC / HCC)."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "PFR", email = "peter.renz87@gmail.com" }]
+license = { text = "Proprietary - RedRidge Bio. All rights reserved." }
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+# RDKit powers real InChIKey resolution + G4 physchem. Identity resolution
+# degrades gracefully (with a warning) when it is absent.
+chem = ["rdkit>=2023.9"]
+# statsmodels is optional; the regression/FDR math is implemented on scipy/numpy
+# directly so the core does not depend on it.
+stats = ["statsmodels>=0.14"]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+warhead = "warhead.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,29 @@
+# --- Data: never committed. Raw sources are large / licensed / checksummed on download.
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+!data/**/README.md
+
+# --- Generated reports (deliverables are regenerated, not versioned).
+reports/*
+!reports/.gitkeep
+
+# --- Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

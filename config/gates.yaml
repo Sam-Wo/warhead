@@ -1,0 +1,117 @@
+# WARHEAD gate thresholds.
+#
+# Every arguable number in the cascade lives here so a reviewer can move it and
+# re-run. Sensitivity analysis over these thresholds is a required deliverable
+# (WARHEAD.md sec 3 / sec 7), not an optional one.
+#
+# Units: concentrations in MOLAR unless a key says _nM. Viability normalised to
+# [0, 1] where 1.0 = untreated and 0.0 = complete kill (Emax).
+
+meta:
+  indications: [COAD, READ, LIHC]   # CRC = COAD+READ, HCC = LIHC
+  release: "DepMap 26Q1"
+
+# ---------------------------------------------------------------------------
+# G1 - Potency, done properly (4PL + interval-censored refit; abandon AUC)
+# ---------------------------------------------------------------------------
+g1:
+  refit:
+    model: "4pl"                 # bottom(Emax) + (top-bottom)/(1+(d/ic50)^hill)
+    response_floor: 0.02         # readings <= floor are left-censored (Tobit)
+    response_ceiling: 1.05       # readings >= ceiling are right-censored
+    min_points: 5                # curves with fewer usable points are dropped by QC
+    hill_bounds: [0.3, 8.0]
+    emax_bounds: [-0.2, 1.2]
+    top_bounds: [0.6, 1.3]
+  gate:
+    ic50_nM_max: 1.0             # sub-nM potency ...
+    ic50_frac_lines_min: 0.20   # ... in >= 20% of lines
+    emax_median_max: 0.15       # AND median Emax < 0.15 (complete kill)
+
+# ---------------------------------------------------------------------------
+# G2 - Does the mechanism survive delivery?
+# ---------------------------------------------------------------------------
+g2:
+  # G2a efflux dependence: regress sensitivity on ABCB1/ABCG2 expression.
+  efflux:
+    genes: [ABCB1, ABCG2]
+    # Fail if standardised positive slope on either transporter exceeds this
+    # (compound behaves as an efflux substrate -> fails the way MMAE/DM1 fail).
+    std_slope_max: 0.25
+    fdr_alpha: 0.05
+
+  # G2b proliferation independence: the HCC lever.
+  proliferation:
+    # Regress log10(IC50) on doubling time -> a "potency-loss" axis. Positive
+    # slope = drug loses potency as lines slow down = mitotic-dependent (matches
+    # the spec's "auristatins show a strong positive slope"). Flat = keep.
+    # Alternatives: "neg_log10_ic50" (flips sign) or "emax".
+    sensitivity_metric: "log10_ic50"
+    doubling_time_col: "doubling_time_hours"
+    min_lines: 25                # minimum lines with both sensitivity + doubling time
+    # KEEP compounds whose sensitivity~doubling-time slope is NOT distinguishable
+    # from zero (proliferation-independent):
+    fdr_alpha: 0.05              # BH-adjusted slope p must EXCEED this to pass
+    # Advisory only: sets the report's "independent" band and the mitotic-vs-
+    # intermediate class split. The pass/fail is the significance test above.
+    std_slope_max: 0.15
+    # Correct pooled-PRISM under-representation of slow-growing lines before the
+    # regression. "balance" bins doubling time into equal-width intervals and
+    # up-weights the sparse (slow) bins.
+    weighting: "balance"
+    weight_bins: 5
+
+  # G2c collateral-lethality scan (generalises the POLR2A logic).
+  collateral:
+    cn_loss_threshold: -0.3      # log2 relative CN below this = hemizygous loss
+    dependency_test: "mann_whitney"   # CN-loss vs CN-neutral Chronos
+    fdr_alpha: 0.05
+    positive_control: POLR2A     # must recover before novel hits are trusted
+    priority_targets: [ME2, POLR2A]
+
+# ---------------------------------------------------------------------------
+# G3 - MOA novelty and orthogonality
+# ---------------------------------------------------------------------------
+g3:
+  novelty:
+    min_distance_to_known_centroid: 0.35   # in the joint embedding, post-G1
+  orthogonal_resistance:
+    covariate: "SLFN11"          # sensitising axis for Top1i; regress it out
+    stratify_by: "ABCB1"         # so residual potency is not just efflux escape
+    top_n: 50
+
+# ---------------------------------------------------------------------------
+# G4 - Bystander competence (tag, do not filter)
+# ---------------------------------------------------------------------------
+g4:
+  b_score_threshold: 1.5         # Guo et al. Adv. Sci. 2024, 10.1002/advs.202306309
+  clogd_range: [-1.0, 3.0]
+  tpsa_max: 120.0
+  mw_max: 1000.0
+
+# ---------------------------------------------------------------------------
+# G5 - Conjugatability
+# ---------------------------------------------------------------------------
+g5:
+  handles_smarts:
+    primary_amine: "[NX3;H2;!$(NC=O)]"
+    secondary_amine: "[NX3;H1;!$(NC=O)]"
+    hydroxyl: "[OX2H]"
+    thiol: "[SX2H]"
+    carboxylic_acid: "[CX3](=O)[OX2H1]"
+
+# ---------------------------------------------------------------------------
+# G6 - Therapeutic window
+# ---------------------------------------------------------------------------
+g6:
+  dlt_compartments: [bone_marrow_HSC, GI_crypt, cornea, alveolar_type_II, peripheral_nerve]
+  expression_percentile_max: 25   # low across all five = window signal
+  faers:
+    disproportionality: [ROR, PRR]
+    shrinkage: true
+
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+report:
+  rrb_maroon: "#6E1426"

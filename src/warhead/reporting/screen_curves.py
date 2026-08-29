@@ -157,9 +157,42 @@ def load_ctrp_curve_data(interim="data/interim", *, top=20, indication="CRC"):
     return pooled, summ
 
 
-def load_prism_curve_data(interim="data/interim", *, top=20, indication="CRC"):
+def _prism_line_iqr(params: pd.DataFrame, summary: pd.DataFrame, *, ngrid=48,
+                    min_conc_uM=6e-4, max_conc_uM=10.0):
+    """Cross-line median + IQR of the PER-LINE 4PL predictions for each compound -
+    the fitted analogue of CTRP's measured-well IQR. Returns compound, conc_uM,
+    median, q1, q3 on a per-compound log dose grid."""
+    rows = []
+    for _, r in summary.iterrows():
+        p = params[params["name"] == r["compound"]].dropna(
+            subset=["upper_limit", "lower_limit", "slope", "ec50"])
+        p = p[p["ec50"] > 0]
+        if len(p) < 5:
+            continue
+        ic50_nM, ec90_nM = r["ic50_uM"] * 1e3, r["ec90_uM"] * 1e3
+        xlo = min(min_conc_uM * 1e3, ic50_nM if np.isfinite(ic50_nM) else min_conc_uM * 1e3) / 3
+        xhi = max(ec90_nM, max_conc_uM * 1e3) * 2.5
+        grid_uM = np.logspace(np.log10(xlo), np.log10(xhi), ngrid) / 1e3
+        up = p["upper_limit"].to_numpy()[:, None]; lo = p["lower_limit"].to_numpy()[:, None]
+        ec = p["ec50"].to_numpy()[:, None]; sl = np.abs(p["slope"].to_numpy())[:, None]
+        with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+            pred = lo + (up - lo) / (1.0 + np.power(grid_uM[None, :] / ec, sl))
+        pred = np.clip(pred, -0.2, 1.5)
+        med = np.nanmedian(pred, axis=0)
+        q1 = np.nanpercentile(pred, 25, axis=0); q3 = np.nanpercentile(pred, 75, axis=0)
+        for j in range(len(grid_uM)):
+            rows.append({"compound": r["compound"], "conc_uM": float(grid_uM[j]),
+                         "median": float(med[j]), "q1": float(q1[j]), "q3": float(q3[j])})
+    return pd.DataFrame(rows)
+
+
+def load_prism_curve_data(interim="data/interim", *, top=20, indication="CRC", with_band=False):
     """Per-compound fitted-curve summary for the PRISM top-N: 4PL params median-
-    aggregated so the drawn curve and its IC50/EC90 markers stay consistent."""
+    aggregated so the drawn curve and its IC50/EC90 markers stay consistent.
+
+    with_band=True additionally returns (pooled, summary) where `pooled` is the
+    cross-line median + IQR of the per-line predictions - the fitted analogue of
+    CTRP's measured IQR, so both screens can be drawn as median+band."""
     from warhead.analysis.screen_potency import rank_potency
     interim = Path(interim)
     prism = pd.read_pickle(interim / "prism_canonical.pkl")
@@ -172,8 +205,13 @@ def load_prism_curve_data(interim="data/interim", *, top=20, indication="CRC"):
     summ = ptop.merge(agg, on="compound", how="inner")
     summ["ec90_uM"] = summ["ec50_uM"] * 9.0 ** (1.0 / summ["slope"].abs())
     summ = summ[np.isfinite(summ["ec90_uM"]) & (summ["ec90_uM"] < 1e4)]
-    return summ[["compound", "target", "ic50_uM", "ec50_uM", "slope",
+    summ = summ[["compound", "target", "ic50_uM", "ec50_uM", "slope",
                  "upper", "lower", "ec90_uM"]].reset_index(drop=True)
+    if with_band:
+        pooled = _prism_line_iqr(params, summ)
+        summ = summ[summ["compound"].isin(pooled["compound"])].reset_index(drop=True)
+        return pooled, summ
+    return summ
 
 
 def render_measured_curves(pooled: pd.DataFrame, summary: pd.DataFrame, *, source, out_path):

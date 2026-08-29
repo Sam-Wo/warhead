@@ -28,11 +28,14 @@ A, B, C = (tested[s] for s in DR_SOURCES)
 overlap_counts = three_set_counts(A, B, C)
 overlap_totals = {s: len(tested[s]) for s in DR_SOURCES}
 
-# dose-response curves for the two wide-window screens (shared frames with gen_curves)
-prism_curves = {"kind": "fitted", "note": "PRISM fitted 4PL with Emax",
-                "summary": load_prism_curve_data(top=20)}
+# dose-response curves for the two wide-window screens (shared frames with gen_curves).
+# Both are drawn as median + IQR across cell lines: CTRP from measured wells (markers),
+# PRISM from the cross-line spread of the per-line 4PL fits (smooth line).
+prism_band, prism_curve_summary = load_prism_curve_data(top=20, with_band=True)
+prism_curves = {"note": "PRISM 4PL, median + IQR across lines", "markers": False,
+                "pooled": prism_band, "summary": prism_curve_summary}
 ctrp_pooled, ctrp_curve_summary = load_ctrp_curve_data(top=20)
-ctrp_curves = {"kind": "measured", "note": "CTRP measured median + IQR",
+ctrp_curves = {"note": "CTRP measured, median + IQR across lines", "markers": True,
                "pooled": ctrp_pooled, "summary": ctrp_curve_summary}
 curves_by_src = {"PRISM Repurposing (secondary)": prism_curves, "CTRP v2": ctrp_curves}
 

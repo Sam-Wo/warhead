@@ -100,12 +100,18 @@ def _curve_titles(summary):
             for _, r in summary.reset_index(drop=True).iterrows()]
 
 
-def _curves_measured_div(pooled, summary, div_id, ncol=4):
-    """Interactive small-multiples of the CTRP measured curves (median + IQR band)."""
+def _curves_band_div(pooled, summary, div_id, ncol=4, markers=True):
+    """Interactive small-multiples of median + IQR-band dose-response curves.
+
+    markers=True draws lines+markers (CTRP: real measured bins); markers=False
+    draws a smooth line (PRISM: cross-line median of the per-line 4PL fits). Both
+    get the shaded IQR band and IC50/EC90 dashed markers, so the two screens read
+    the same."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     s = summary.reset_index(drop=True); n = len(s)
     nrow = int(np.ceil(n / ncol))
+    mode = "lines+markers" if markers else "lines"
     fig = make_subplots(rows=nrow, cols=ncol, subplot_titles=_curve_titles(s),
                         vertical_spacing=0.055, horizontal_spacing=0.045)
     for i, r in s.iterrows():
@@ -115,8 +121,9 @@ def _curves_measured_div(pooled, summary, div_id, ncol=4):
         fig.add_trace(go.Scatter(x=x + x[::-1], y=cur["q3"].tolist() + cur["q1"].tolist()[::-1],
                                  fill="toself", fillcolor="rgba(110,20,38,0.12)", line=dict(width=0),
                                  hoverinfo="skip", showlegend=False), row=rr, col=cc)
-        fig.add_trace(go.Scatter(x=x, y=cur["median"], mode="lines+markers",
-                                 line=dict(color=RRB, width=1.6), marker=dict(size=4, color=RRB),
+        fig.add_trace(go.Scatter(x=x, y=cur["median"], mode=mode,
+                                 line=dict(color=RRB, width=1.6),
+                                 marker=dict(size=4, color=RRB) if markers else None,
                                  hovertemplate="%{x:.0f} nM<br>viab %{y:.2f}<extra></extra>",
                                  showlegend=False), row=rr, col=cc)
         _vline(fig, r["ic50_uM"] * 1e3, "#222", rr, cc)
@@ -125,39 +132,6 @@ def _curves_measured_div(pooled, summary, div_id, ncol=4):
         fig.update_yaxes(range=[-0.05, 1.2], row=rr, col=cc)
     fig.update_annotations(font_size=10)
     fig.update_xaxes(title_text="", tickfont_size=8)
-    fig.update_yaxes(tickfont_size=8)
-    fig.update_layout(template="plotly_white", height=210 * nrow, margin=dict(t=34, b=20, l=30, r=10))
-    return fig.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, default_width="100%")
-
-
-def _curves_fitted_div(summary, div_id, ncol=4, min_conc_uM=6e-4, max_conc_uM=10.0):
-    """Interactive small-multiples of the PRISM fitted 4PL curves (with Emax plateau)."""
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    from warhead.reporting.screen_curves import _fourpl_free
-    s = summary.reset_index(drop=True); n = len(s)
-    nrow = int(np.ceil(n / ncol))
-    fig = make_subplots(rows=nrow, cols=ncol, subplot_titles=_curve_titles(s),
-                        vertical_spacing=0.055, horizontal_spacing=0.045)
-    for i, r in s.iterrows():
-        rr, cc = i // ncol + 1, i % ncol + 1
-        ic50_nM, ec90_nM = r["ic50_uM"] * 1e3, r["ec90_uM"] * 1e3
-        xlo = min(min_conc_uM * 1e3, ic50_nM if np.isfinite(ic50_nM) else min_conc_uM * 1e3) / 3
-        xhi = max(ec90_nM, max_conc_uM * 1e3) * 2.5
-        xx = np.logspace(np.log10(xlo), np.log10(xhi), 120)
-        yy = _fourpl_free(xx / 1e3, r["upper"], r["lower"], r["ec50_uM"], r["slope"])
-        fig.add_trace(go.Scatter(x=xx, y=yy, mode="lines", line=dict(color=RRB, width=1.8),
-                                 hovertemplate="%{x:.0f} nM<br>viab %{y:.2f}<extra></extra>",
-                                 showlegend=False), row=rr, col=cc)
-        fig.add_trace(go.Scatter(x=[xlo, xhi], y=[r["lower"], r["lower"]], mode="lines",
-                                 line=dict(color=RRB, width=0.8, dash="dot"), opacity=0.5,
-                                 hoverinfo="skip", showlegend=False), row=rr, col=cc)
-        _vline(fig, ic50_nM, "#222", rr, cc)
-        _vline(fig, ec90_nM, RRB, rr, cc)
-        fig.update_xaxes(type="log", row=rr, col=cc)
-        fig.update_yaxes(range=[-0.05, 1.2], row=rr, col=cc)
-    fig.update_annotations(font_size=10)
-    fig.update_xaxes(tickfont_size=8)
     fig.update_yaxes(tickfont_size=8)
     fig.update_layout(template="plotly_white", height=210 * nrow, margin=dict(t=34, b=20, l=30, r=10))
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, default_width="100%")
@@ -262,11 +236,10 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
             if cv is not None:
                 body.append(f'<h3>Top-20 dose-response curves - {cv["note"]}</h3>')
                 body.append('<p style="color:#666;font-size:12px;margin:0 0 6px">'
-                            'hover for viability at each dose; dashed = IC50 (black) &amp; EC90 (maroon).</p>')
-                if cv["kind"] == "measured":
-                    body.append(_curves_measured_div(cv["pooled"], cv["summary"], f"curves_{sid}"))
-                else:
-                    body.append(_curves_fitted_div(cv["summary"], f"curves_{sid}"))
+                            'median (line) + IQR across cell lines (shaded); hover for viability at '
+                            'each dose; dashed = IC50 (black) &amp; EC90 (maroon).</p>')
+                body.append(_curves_band_div(cv["pooled"], cv["summary"], f"curves_{sid}",
+                                             markers=cv.get("markers", True)))
         elif sc["type"] == "overlap":
             body.append('<h3>Compound-library overlap across the dose-response screens</h3>')
             if venn_png is not None:

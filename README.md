@@ -55,8 +55,14 @@ warhead g2b-real           # needs GDSC2 fitted + DepMap Model.csv +
 warhead prism              # PRISM Repurposing secondary (real Emax + clinical phase)
 warhead ctrp               # CTRP v2 (widest window; needs the R export below)
 warhead pdxe               # Novartis PDXE in-vivo CRC response (different modality)
+warhead nci60              # NCI-60 CRC-selectivity (z-scored; no HCC/liver, no EC90)
 warhead clinical-tox       # curated clinical-validation + patient-toxicity table
 warhead selectivity-html   # interactive Plotly HCC/CRC selectivity (source dropdown)
+
+# Top-N dose-response curves (reporting.screen_curves): PRISM fitted-with-Emax,
+# CTRP measured (16-pt raw from scripts/ctrp_export_curves.R). Screen summary
+# (screens_summary.py) is generated for both CRC and HCC with IC50 + EC90 + Emax
+# + clinical status + ADC-payload status.
 
 # CTRP v2 has no flat-file download; export the Zenodo PharmacoSet with base R
 # (no PharmacoGx needed - reads the S4 slots as attributes):

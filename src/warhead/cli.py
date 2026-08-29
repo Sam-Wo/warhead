@@ -304,6 +304,20 @@ def cmd_pdxe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_nci60(args: argparse.Namespace) -> int:
+    from .analysis.nci60 import load_crc_selectivity, _annotated
+    from .reporting.nci60 import render_nci60_report
+    ensure_dirs()
+    sel = load_crc_selectivity()
+    ann = _annotated(sel)
+    render_nci60_report(sel, ann, out_path=Path(args.out) / "nci60_crc_selectivity.pdf",
+                        n_total=len(sel), n_colon=7)
+    ann.head(300).to_excel(Path(args.out) / "nci60_crc_selectivity.xlsx", index=False)
+    print(f"NCI-60 CRC selectivity ({len(sel):,} compounds; {len(ann)} annotated) "
+          f"-> reports/nci60_crc_selectivity.{{pdf,xlsx}}  (no HCC: no liver line)")
+    return 0
+
+
 def cmd_clinical_tox(args: argparse.Namespace) -> int:
     from .analysis.clinical_tox import clinical_tox_table
     from .reporting.clinical_tox_fig import render_clinical_tox
@@ -438,6 +452,10 @@ def build_parser() -> argparse.ArgumentParser:
     px = sub.add_parser("pdxe", help="Novartis PDXE in-vivo CRC response ranking + selectivity")
     px.add_argument("--out", default=str(REPORTS))
     px.set_defaults(func=cmd_pdxe)
+
+    nc = sub.add_parser("nci60", help="NCI-60 CRC-selectivity (z-scored; no HCC/liver, no absolute EC90)")
+    nc.add_argument("--out", default=str(REPORTS))
+    nc.set_defaults(func=cmd_nci60)
 
     ct = sub.add_parser("clinical-tox", help="curated clinical-validation + patient-toxicity table")
     ct.add_argument("--out", default=str(REPORTS))

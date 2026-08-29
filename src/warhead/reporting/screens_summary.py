@@ -45,9 +45,10 @@ def build_summary(source_ranks: dict, clin_tox: pd.DataFrame, *, indication="CRC
         for src, r in source_ranks.items():
             m = r[r["compound"].map(_norm) == k]
             rec[f"ec90_{src}"] = float(m["median_ec90_nM"].iloc[0]) if len(m) else np.nan
+            rec[f"ic50_{src}"] = float(m["median_ic50_nM"].iloc[0]) if len(m) else np.nan
             if len(m) and pd.isna(rec.get("clinical_phase")) and pd.notna(m["clinical_phase"].iloc[0]):
                 rec["clinical_phase"] = m["clinical_phase"].iloc[0]
-            if len(m) and "emax" not in rec:
+            if len(m) and (pd.isna(rec.get("emax")) if "emax" in rec else True) and pd.notna(m["median_emax"].iloc[0]):
                 rec["emax"] = m["median_emax"].iloc[0]
         # curated clinical/payload: match if any curated token is inside the compound
         hit = tox[tox["_tok"].apply(lambda toks: any(t in k for t in toks))]
@@ -69,8 +70,9 @@ def render_summary(df: pd.DataFrame, source_names: list, *, out_path, indication
     ax.set_xlim(0, 12); ax.set_ylim(-0.5, n - 0.5); ax.invert_yaxis(); ax.axis("off")
     fig.suptitle(f"WARHEAD - cross-source EC90 of the top {indication} compounds",
                  color=RRB_MAROON, fontsize=14, fontweight="bold", y=.99)
-    ax.text(0, -1.15, "dot = median EC90 in " + indication + " (nM; darker/left = more potent).  "
-            "clin = clinical status.  Emax = residual viability (PRISM).", fontsize=8.5, color="#555")
+    ax.text(0, -1.15, "per source: dot = median EC90 in " + indication + " (nM; darker = more potent), "
+            "small grey = median IC50 (nM).  Emax = residual viability (PRISM/CTRP).",
+            fontsize=8.5, color="#555")
 
     # column x positions
     x_comp, x_tgt = 0.0, 3.2
@@ -85,7 +87,7 @@ def render_summary(df: pd.DataFrame, source_names: list, *, out_path, indication
     ax.text(x_comp, -0.5, "compound", fontsize=8, fontweight="bold")
     ax.text(x_tgt, -0.5, "target", fontsize=8, fontweight="bold")
     for s in source_names:
-        ax.text(src_x[s], -0.5, s.split()[0], fontsize=7.5, fontweight="bold", ha="center")
+        ax.text(src_x[s], -0.5, s.split()[0] + "\nEC90·IC50", fontsize=7, fontweight="bold", ha="center", va="top")
     ax.text(x_emax, -0.5, "Emax", fontsize=8, fontweight="bold", ha="center")
     ax.text(x_clin, -0.5, "clinical", fontsize=8, fontweight="bold")
     ax.text(x_payload, -0.5, "ADC payload?", fontsize=8, fontweight="bold")
@@ -95,13 +97,15 @@ def render_summary(df: pd.DataFrame, source_names: list, *, out_path, indication
         ax.text(x_tgt, i, str(row.get("target") or "")[:26], fontsize=6.6, va="center",
                 color="#555", family="monospace")
         for s in source_names:
-            v = row.get(f"ec90_{s}")
+            v = row.get(f"ec90_{s}"); ic = row.get(f"ic50_{s}")
             if pd.notna(v):
-                ax.scatter(src_x[s], i, s=140, c=[cmap(norm(v))], edgecolor="#333", linewidth=.4, zorder=3)
-                ax.text(src_x[s], i, f"{v:.0f}", fontsize=5.6, ha="center", va="center",
+                ax.scatter(src_x[s], i - 0.12, s=150, c=[cmap(norm(v))], edgecolor="#333", linewidth=.4, zorder=3)
+                ax.text(src_x[s], i - 0.12, f"{v:.0f}", fontsize=5.6, ha="center", va="center",
                         color="white" if v < 300 else "#222", zorder=4)
+                ax.text(src_x[s], i + 0.30, f"{ic:.0f}" if pd.notna(ic) else "-", fontsize=5.2,
+                        ha="center", va="center", color="#888")
             else:
-                ax.text(src_x[s], i, "-", fontsize=8, ha="center", va="center", color="#bbb")
+                ax.text(src_x[s], i, "-", fontsize=8, ha="center", va="center", color="#ccc")
         em = row.get("emax")
         ax.text(x_emax, i, f"{em:.2f}" if pd.notna(em) else "-", fontsize=7, ha="center", va="center")
         ph = str(row.get("clinical_phase") or "-")

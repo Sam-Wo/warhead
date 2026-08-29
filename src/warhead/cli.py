@@ -6,6 +6,8 @@
                             write reports/exatecan_partner.{pdf,xlsx}
     warhead collateral      run the G2c collateral-lethality scan (CRC + HCC) and
                             write reports/collateral_lethality_*.{pdf,xlsx}
+    warhead gdsc            GDSC EC90 potency + HCC/CRC selectivity (real data) ->
+                            reports/gdsc_ec90_selectivity.pdf + ranking xlsx
     warhead g2b  --raw-dir  run the G2b slice on real PRISM + DepMap data
     warhead info            print the resolved gate thresholds and repo paths
 """
@@ -152,6 +154,35 @@ def cmd_collateral(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gdsc(args: argparse.Namespace) -> int:
+    from .analysis.gdsc_ec90 import indication_ranking, selectivity
+    from .io.gdsc import load_with_ec90
+    from .reporting import render_gdsc_report
+
+    ensure_dirs()
+    df = load_with_ec90(Path(args.raw_dir) / "gdsc", dataset=args.dataset)
+    print(f"{args.dataset}: {len(df)} curves | EC90 within tested range overall: "
+          f"{(df['ec90_range'] == 'within').mean():.1%}")
+
+    rankings, sels = {}, {}
+    for ind in ("CRC", "HCC"):
+        rankings[ind] = indication_ranking(df, ind)
+        sels[ind] = selectivity(df, ind)
+        top = rankings[ind].head(5)["drug_name"].tolist()
+        nsel = int(sels[ind]["selective_potent"].sum()) if len(sels[ind]) else 0
+        print(f"  {ind}: lowest-EC90 -> {', '.join(top)}  |  selective&potent = {nsel}")
+
+    out_dir = Path(args.out)
+    pdf = render_gdsc_report(rankings, sels, out_path=out_dir / "gdsc_ec90_selectivity.pdf")
+    xlsx = out_dir / "gdsc_ec90_ranking.xlsx"
+    with pd.ExcelWriter(xlsx, engine="openpyxl") as xw:
+        for ind in ("CRC", "HCC"):
+            rankings[ind].to_excel(xw, sheet_name=f"{ind}_ec90_rank", index=False)
+            sels[ind].to_excel(xw, sheet_name=f"{ind}_selectivity", index=False)
+    print(f"\nwrote {pdf}\nwrote {xlsx}")
+    return 0
+
+
 def cmd_g2b(args: argparse.Namespace) -> int:
     from .cascade import run_g2b_slice
     from .io.depmap import load_model_metadata
@@ -208,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--n-lines", type=int, default=80)
     c.add_argument("--out", default=str(REPORTS))
     c.set_defaults(func=cmd_collateral)
+
+    gd = sub.add_parser("gdsc", help="GDSC EC90 ranking + HCC/CRC selectivity (real data)")
+    gd.add_argument("--raw-dir", default="data/raw")
+    gd.add_argument("--dataset", default="GDSC2", choices=["GDSC1", "GDSC2"])
+    gd.add_argument("--out", default=str(REPORTS))
+    gd.set_defaults(func=cmd_gdsc)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

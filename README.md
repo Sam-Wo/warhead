@@ -44,6 +44,9 @@ warhead exatecan           # -> reports/exatecan_partner.{pdf,xlsx}
 # Run the G2c collateral-lethality scan (CRC + HCC):
 warhead collateral         # -> reports/collateral_lethality_{CRC,HCC}.pdf + .xlsx
 
+# GDSC EC90 potency + HCC/CRC tissue-selectivity (REAL GDSC2 data):
+warhead gdsc               # needs data/raw/gdsc/GDSC2_fitted_dose_response.xlsx
+
 # Or without installing:
 PYTHONPATH=src python -m warhead demo
 

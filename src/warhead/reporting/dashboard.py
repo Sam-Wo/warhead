@@ -264,14 +264,21 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                                [str, lambda v: str(v)[:34], lambda v: str(int(v)),
                                 lambda v: f"{v:.1f}", lambda v: f"{v:.0f}"]))
         elif sc["type"] == "nci60":
-            an = sc["selectivity"].sort_values("delta_z", ascending=False).head(25)
-            body.append(_bar_div(an["drug"].astype(str).str.slice(0, 30).tolist()[::-1],
+            an = sc["selectivity"].sort_values("delta_z", ascending=False).head(25).copy()
+            # most NCI-60 compounds are unnamed research entries - fall back to the
+            # NSC accession so every bar has a unique, identifiable label (two "-"
+            # names otherwise collide onto one y-tick and read as a double bar)
+            def _nci_label(row):
+                d = str(row["drug"]).strip()
+                return d[:30] if d and d.lower() not in ("-", "nan", "none") else f"NSC {row['NSC']}"
+            an["label"] = an.apply(_nci_label, axis=1)
+            body.append(_bar_div(an["label"].tolist()[::-1],
                                  an["delta_z"].tolist()[::-1], [RRB] * len(an),
                                  "CRC(colon)-selective (z colon - rest)", "delta z", f"bar_{sid}", height=620))
             body.append("<h3>Top CRC-selective (annotated)</h3>")
-            body.append(_table(an, ["drug", "MOA", "FDA", "delta_z"],
+            body.append(_table(an, ["label", "MOA", "FDA", "delta_z"],
                                ["compound", "MoA", "clinical", "Δz colon"],
-                               [lambda v: str(v)[:34], lambda v: str(v)[:34], str, lambda v: f"{v:.2f}"]))
+                               [str, lambda v: str(v)[:34], str, lambda v: f"{v:.2f}"]))
         tabs_div.append(f'<div id="{sid}" class="tab-pane">{"".join(body)}</div>')
 
     css = """

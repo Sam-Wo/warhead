@@ -4,7 +4,7 @@ at <- attributes(pset); sens <- at$sensitivity
 raw <- sens$raw
 info <- as.data.frame(sens$info); info$exp <- rownames(info)
 drug <- as.data.frame(at$drug)
-top <- read.csv("data/interim/ctrp_top15_drugs.csv", stringsAsFactors=FALSE)$compound
+top <- read.csv("data/interim/ctrp_top_drugs.csv", stringsAsFactors=FALSE)$compound
 name2id <- setNames(drug$drugid, drug$cpd_name)
 top_ids <- unname(name2id[top]); top_ids <- top_ids[!is.na(top_ids)]
 sel <- info[info$drugid %in% top_ids, c("exp","drugid","cellid")]

@@ -59,10 +59,24 @@ warhead nci60              # NCI-60 CRC-selectivity (z-scored; no HCC/liver, no 
 warhead clinical-tox       # curated clinical-validation + patient-toxicity table
 warhead selectivity-html   # interactive Plotly HCC/CRC selectivity (source dropdown)
 
-# Top-N dose-response curves (reporting.screen_curves): PRISM fitted-with-Emax,
-# CTRP measured (16-pt raw from scripts/ctrp_export_curves.R). Screen summary
-# (screens_summary.py) is generated for both CRC and HCC with IC50 + EC90 + Emax
-# + clinical status + ADC-payload status.
+# Cross-screen deliverables (reproducible generation scripts under scripts/):
+PYTHONPATH=src python scripts/gen_ctrp_top_drugs.py  # CRC top-20 single agents ->
+                           #   data/interim/ctrp_top_drugs.csv (drives the R curve export)
+PYTHONPATH=src python scripts/gen_curves.py     # reports/{ctrp,prism}_top20_curves.pdf
+                           #   CTRP measured (raw wells pooled into 14 log-bins to remove
+                           #   the per-line dose-grid zig-zag); PRISM fitted 4PL with Emax
+PYTHONPATH=src python scripts/gen_summary.py    # reports/screens_summary_{CRC,HCC}.pdf +
+                           #   .xlsx  (numbers-in-cells heatmap: per-screen IC50/EC90, target,
+                           #   Emax, clinical/ADC; hatched "n/t" marks compounds a screen never
+                           #   assayed) AND reports/screens_overlap.pdf (compound-library Venn)
+PYTHONPATH=src python scripts/gen_dashboard.py  # reports/screens_dashboard.html - one
+                           #   interactive tab per screen + an Overlap (Venn) tab; each ranking
+                           #   table carries a G/P/C "also tested in" cross-screen coverage badge
+
+# Top-N curves live in reporting.screen_curves; the cross-screen compound-overlap
+# (Venn + normalised-name matching) in reporting.screen_overlap; per-screen assay
+# metadata in analysis.screen_meta; shared canonical-frame loader in
+# reporting.screen_data.
 
 # CTRP v2 has no flat-file download; export the Zenodo PharmacoSet with base R
 # (no PharmacoGx needed - reads the S4 slots as attributes):

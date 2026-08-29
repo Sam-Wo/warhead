@@ -91,6 +91,52 @@ def render_fitted_curves(summary: pd.DataFrame, *, source, out_path,
     return out_path
 
 
+def pool_measured_curves(raw: pd.DataFrame, *, nbins=14, min_bin_n=8, range_frac=0.5):
+    """Pool raw per-well CTRP viability into a clean median+IQR curve per compound.
+
+    CTRP doses each line on a compound-specific grid, and different lines get
+    different grids (jittered, variable density, sometimes a different range).
+    Plotting the raw pooled points therefore zig-zags. This collapses each
+    compound onto a common set of log-spaced concentration bins:
+
+      raw: compound, conc_uM, viability  (viability already a FRACTION, not %),
+           optional model_id to identify a "line".
+
+    1. drop lines whose max tested dose < range_frac x the compound's median
+       per-line max (removes shallow/off-range lines that cause the zig-zag);
+    2. cut each compound's log10(conc) into `nbins` equal-width bins, take the
+       median viability + IQR per bin;
+    3. drop bins with fewer than `min_bin_n` wells.
+
+    Returns pooled: compound, conc_uM, median, q1, q3, n.
+    """
+    d = raw.copy()
+    d = d[np.isfinite(d["conc_uM"]) & (d["conc_uM"] > 0) & np.isfinite(d["viability"])]
+    line_col = "model_id" if "model_id" in d.columns else ("cellid" if "cellid" in d.columns else None)
+    out = []
+    for cmp, g in d.groupby("compound"):
+        if line_col is not None:
+            line_max = g.groupby(line_col)["conc_uM"].max()
+            keep = line_max[line_max >= range_frac * line_max.median()].index
+            g = g[g[line_col].isin(keep)]
+        if len(g) < min_bin_n:
+            continue
+        lg = np.log10(g["conc_uM"].to_numpy())
+        edges = np.linspace(lg.min(), lg.max(), nbins + 1)
+        idx = np.clip(np.digitize(lg, edges[1:-1]), 0, nbins - 1)
+        centres = 10 ** ((edges[:-1] + edges[1:]) / 2)
+        v = g["viability"].to_numpy()
+        for b in range(nbins):
+            m = idx == b
+            if m.sum() < min_bin_n:
+                continue
+            vb = v[m]
+            out.append({"compound": cmp, "conc_uM": float(centres[b]),
+                        "median": float(np.median(vb)), "q1": float(np.percentile(vb, 25)),
+                        "q3": float(np.percentile(vb, 75)), "n": int(m.sum())})
+    return pd.DataFrame(out)
+
+
 def render_measured_curves(pooled: pd.DataFrame, summary: pd.DataFrame, *, source, out_path):
     """pooled: compound, conc_uM, median, q1, q3.  summary: compound, target,
     ic50_uM, ec90_uM, max_conc_uM (for the markers)."""

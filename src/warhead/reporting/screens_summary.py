@@ -63,6 +63,130 @@ def build_summary(source_ranks: dict, clin_tox: pd.DataFrame, *, indication="CRC
     return df.sort_values(sort_col, na_position="last").reset_index(drop=True)
 
 
+def _fmt(v):
+    if pd.isna(v):
+        return "-"
+    if v >= 1000:
+        return f"{v/1000:.1f}k" if v < 1e6 else ">1M"
+    return f"{v:.0f}" if v >= 10 else f"{v:.1f}"
+
+
+def render_summary_heatmap(df: pd.DataFrame, source_names: list, meta: pd.DataFrame | None = None,
+                           *, out_path, indication="CRC", tested: dict | None = None) -> Path:
+    """Heatmap table: per source an IC50 and EC90 cell (coloured by potency, value
+    printed), plus target, Emax, clinical status and ADC-payload status. A screen
+    metadata block sits on top.
+
+    tested: optional {source_name: set(normalised compound names ever assayed)}. When
+    given, an empty cell is disambiguated - a hatched grey "n/t" means the compound was
+    never in that screen's library, versus a faint dot for tested-but-outside-the-gate.
+    """
+    from matplotlib.colors import LogNorm
+    out_path = Path(out_path); out_path.parent.mkdir(parents=True, exist_ok=True)
+    n = len(df)
+    short = {s: s.split()[0] for s in source_names}
+    meta_h = 0 if meta is None else len(meta) + 2
+
+    fig_h = 0.34 * n + 0.24 * meta_h + 2.2
+    fig = plt.figure(figsize=(15.5, fig_h))
+    ax = fig.add_axes([0.008, 0.015, 0.984, 0.955]); ax.axis("off")
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    fig.suptitle(f"WARHEAD - cross-source EC90 / IC50 of the top {indication} compounds",
+                 color=RRB_MAROON, fontsize=15, fontweight="bold", y=.997)
+
+    # ---- screen metadata block (top) ----
+    top_y = 0.965
+    if meta is not None:
+        ax.text(0.0, top_y, "SCREEN METADATA", fontsize=8.5, fontweight="bold", color=RRB_MAROON)
+        mcols = [("source", 0.0, 15), ("compounds", 0.16, 8), ("cell_lines", 0.225, 8),
+                 ("CRC_lines", 0.29, 6), ("HCC_lines", 0.345, 6), ("dose_range", 0.40, 34),
+                 ("n_doses", 0.60, 6), ("metrics", 0.66, 42)]
+        hdr = {"source": "screen", "compounds": "cpds", "cell_lines": "lines", "CRC_lines": "CRC",
+               "HCC_lines": "HCC", "dose_range": "dose range", "n_doses": "#dose", "metrics": "metrics"}
+        for key, x, _ in mcols:
+            ax.text(x, top_y - 0.018, hdr[key], fontsize=7, fontweight="bold", color="#444")
+        for i, (_, r) in enumerate(meta.iterrows()):
+            yy = top_y - 0.033 - i * 0.017
+            for key, x, w in mcols:
+                ax.text(x, yy, str(r[key])[:w], fontsize=6.6, color="#333",
+                        family="monospace" if key in ("dose_range", "metrics", "n_doses") else "sans-serif")
+        table_top = top_y - 0.033 - len(meta) * 0.017 - 0.03
+    else:
+        table_top = top_y
+    ax.text(0.0, table_top + 0.012,
+            f"COMPOUNDS  -  cell = median in {indication} (nM), coloured by potency (dark = potent); value printed.",
+            fontsize=8, fontweight="bold", color=RRB_MAROON)
+
+    # ---- column geometry for the compound table ----
+    x_comp, x_tgt = 0.0, 0.15
+    metric_x = {}
+    x = 0.32
+    for s in source_names:
+        metric_x[(s, "ic50")] = x; metric_x[(s, "ec90")] = x + 0.052
+        x += 0.125
+    x_emax = x + 0.005; x_clin = x_emax + 0.055; x_pay = x_clin + 0.10
+    cw = 0.024  # half cell width
+
+    row_h = (table_top - 0.06) / max(n, 1)
+    hy = table_top - 0.005
+    ax.text(x_comp, hy, "compound", fontsize=8, fontweight="bold")
+    ax.text(x_tgt, hy, "target", fontsize=8, fontweight="bold")
+    for s in source_names:
+        cx = (metric_x[(s, "ic50")] + metric_x[(s, "ec90")]) / 2
+        ax.text(cx, hy + 0.008, short[s], fontsize=7.5, fontweight="bold", ha="center", color=RRB_MAROON)
+        ax.text(metric_x[(s, "ic50")], hy - 0.006, "IC50", fontsize=6.3, ha="center", color="#666")
+        ax.text(metric_x[(s, "ec90")], hy - 0.006, "EC90", fontsize=6.3, ha="center", color="#666")
+    ax.text(x_emax, hy, "Emax", fontsize=7.5, fontweight="bold", ha="center")
+    ax.text(x_clin, hy, "clinical", fontsize=7.5, fontweight="bold")
+    ax.text(x_pay, hy, "ADC payload?", fontsize=7.5, fontweight="bold")
+
+    norm = LogNorm(vmin=1, vmax=1e4); cmap = plt.cm.RdPu_r
+    for i, row in df.reset_index(drop=True).iterrows():
+        yc = table_top - 0.05 - (i + 0.5) * row_h
+        ax.text(x_comp, yc, str(row["compound"])[:22], fontsize=7.6, va="center", fontweight="bold")
+        ax.text(x_tgt, yc, str(row.get("target") or "")[:24], fontsize=6.3, va="center",
+                color="#555", family="monospace")
+        ckey = _norm(row["compound"])
+        for s in source_names:
+            not_tested = tested is not None and ckey not in tested.get(s, set())
+            for metric in ("ic50", "ec90"):
+                v = row.get(f"{metric}_{s}")
+                mx = metric_x[(s, metric)]
+                if pd.notna(v):
+                    col = cmap(norm(max(v, 1)))
+                    ax.add_patch(plt.Rectangle((mx - cw, yc - row_h * .42), 2 * cw, row_h * .84,
+                                               facecolor=col, edgecolor="#eee", linewidth=.3, zorder=1))
+                    lum = 0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]
+                    ax.text(mx, yc, _fmt(v), fontsize=6.0, ha="center", va="center",
+                            color="white" if lum < 0.5 else "#222", zorder=2)
+                elif not_tested:
+                    ax.add_patch(plt.Rectangle((mx - cw, yc - row_h * .42), 2 * cw, row_h * .84,
+                                               facecolor="#EDEDED", edgecolor="#ddd", linewidth=.3,
+                                               hatch="////", zorder=1))
+                    ax.text(mx, yc, "n/t", fontsize=5.3, ha="center", va="center", color="#999", zorder=2)
+                else:
+                    ax.text(mx, yc, "·", fontsize=8, ha="center", va="center", color="#c7c7c7")
+        em = row.get("emax")
+        ax.text(x_emax, yc, f"{em:.2f}" if pd.notna(em) else "-", fontsize=6.8, ha="center", va="center")
+        ph = str(row.get("clinical_phase") or "-")
+        cc = "#6E1426" if ph.startswith(("Launched", "Approved", "FDA")) else ("#B05468" if ph.startswith("Phase") else "#888")
+        ax.text(x_clin, yc, ph[:16], fontsize=6.8, va="center", color=cc, fontweight="bold")
+        pay = str(row.get("adc_payload") or "")
+        is_pay = "payload" in pay.lower() and "not a payload" not in pay.lower()
+        ax.text(x_pay, yc, ("● " if is_pay else "○ ") + pay[:30], fontsize=6.2, va="center",
+                color=RRB_MAROON if is_pay else "#999")
+
+    legend = ("IC50 = fitted 50% viability; EC90 = 90% of max effect. GDSC EC90 is "
+              "extrapolation-inflated (narrow windows, bottom=0); PRISM/CTRP EC90 use a real Emax.")
+    if tested is not None:
+        legend += ("   Cells:  coloured = potent hit (value in nM);  " + r"$\cdot$"
+                   " = tested but outside the potency gate;  hatched n/t = not in that screen's library.")
+    fig.text(0.008, 0.006, legend, fontsize=7, color="#777")
+    fig.savefig(out_path, format=out_path.suffix.lstrip(".").lower() or "pdf", dpi=150)
+    plt.close(fig)
+    return out_path
+
+
 def render_summary(df: pd.DataFrame, source_names: list, *, out_path, indication="CRC") -> Path:
     out_path = Path(out_path); out_path.parent.mkdir(parents=True, exist_ok=True)
     n = len(df)

@@ -53,8 +53,16 @@ warhead g2b-real           # needs GDSC2 fitted + DepMap Model.csv +
 
 # Same EC90/selectivity analysis on other public screens (source-agnostic):
 warhead prism              # PRISM Repurposing secondary (real Emax + clinical phase)
+warhead ctrp               # CTRP v2 (widest window; needs the R export below)
 warhead pdxe               # Novartis PDXE in-vivo CRC response (different modality)
 warhead clinical-tox       # curated clinical-validation + patient-toxicity table
+warhead selectivity-html   # interactive Plotly HCC/CRC selectivity (source dropdown)
+
+# CTRP v2 has no flat-file download; export the Zenodo PharmacoSet with base R
+# (no PharmacoGx needed - reads the S4 slots as attributes):
+#   R bin: C:\Program Files\R\R-4.4.2\bin\x64   (VS Code: REditorSupport.r installed)
+#   "C:\Program Files\R\R-4.4.2\bin\x64\Rscript.exe" scripts/ctrp_export.R
+#   -> data/interim/ctrp_export.csv, then `warhead ctrp`
 
 # Or without installing:
 PYTHONPATH=src python -m warhead demo

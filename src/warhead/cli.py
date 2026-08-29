@@ -248,9 +248,44 @@ def _screen_reports(source_label, can, out_dir, stem):
 
 def cmd_prism(args: argparse.Namespace) -> int:
     from .io.prism import load_canonical
+    from .config import DATA_INTERIM
     ensure_dirs()
     can = load_canonical(Path(args.raw_dir) / "prism", Path(args.raw_dir) / "depmap" / "Model.csv")
+    can.to_pickle(DATA_INTERIM / "prism_canonical.pkl")   # for warhead selectivity-html
     _screen_reports("PRISM Repurposing (secondary)", can, Path(args.out), "prism_ec90_selectivity")
+    return 0
+
+
+def cmd_ctrp(args: argparse.Namespace) -> int:
+    from .io.ctrp import load_canonical, CTRP_EXPORT
+    from .config import DATA_INTERIM
+    ensure_dirs()
+    can = load_canonical(args.export_csv or CTRP_EXPORT)
+    can.to_pickle(DATA_INTERIM / "ctrp_canonical.pkl")    # for warhead selectivity-html
+    _screen_reports("CTRP v2", can, Path(args.out), "ctrp_ec90_selectivity")
+    return 0
+
+
+def cmd_selectivity_html(args: argparse.Namespace) -> int:
+    """Interactive (Plotly) HCC/CRC selectivity across whichever canonical screen
+    pickles are available in data/interim/."""
+    from .analysis.screen_potency import selectivity
+    from .config import DATA_INTERIM
+    from .reporting.interactive import render_selectivity_html
+    ensure_dirs()
+    sources = {"GDSC2": "gdsc_canonical.pkl", "PRISM Repurposing (secondary)": "prism_canonical.pkl",
+               "CTRP v2": "ctrp_canonical.pkl"}
+    sel = {}
+    for src, fn in sources.items():
+        p = DATA_INTERIM / fn
+        if p.exists():
+            can = pd.read_pickle(p)
+            sel[src] = {i: selectivity(can, i) for i in ("CRC", "HCC")}
+    if not sel:
+        print("no canonical screen pickles in data/interim/ (run warhead prism / ctrp first)")
+        return 1
+    out = render_selectivity_html(sel, out_path=Path(args.out) / "selectivity_interactive.html")
+    print(f"wrote {out}  (sources: {', '.join(sel)})")
     return 0
 
 
@@ -390,6 +425,15 @@ def build_parser() -> argparse.ArgumentParser:
     pm.add_argument("--raw-dir", default="data/raw")
     pm.add_argument("--out", default=str(REPORTS))
     pm.set_defaults(func=cmd_prism)
+
+    cp = sub.add_parser("ctrp", help="CTRP v2 EC90 ranking + HCC/CRC selectivity (via base-R export)")
+    cp.add_argument("--export-csv", default=None, help="ctrp_export.csv from scripts/ctrp_export.R")
+    cp.add_argument("--out", default=str(REPORTS))
+    cp.set_defaults(func=cmd_ctrp)
+
+    sh = sub.add_parser("selectivity-html", help="interactive Plotly HCC/CRC selectivity across screens")
+    sh.add_argument("--out", default=str(REPORTS))
+    sh.set_defaults(func=cmd_selectivity_html)
 
     px = sub.add_parser("pdxe", help="Novartis PDXE in-vivo CRC response ranking + selectivity")
     px.add_argument("--out", default=str(REPORTS))

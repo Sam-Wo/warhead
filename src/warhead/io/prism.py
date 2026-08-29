@@ -50,7 +50,8 @@ def to_canonical(params: pd.DataFrame, indication_map: dict[str, str]) -> pd.Dat
             & np.isfinite(df["slope"]) & (df["slope"].abs() > 1e-3)
             & df["upper_limit"].between(0.5, 1.5)]
     df["ec90_uM"] = df["ec50"] * np.power(9.0, 1.0 / df["slope"].abs())
-    df = df[np.isfinite(df["ec90_uM"])]
+    # a near-zero slope makes 9^(1/slope) explode; cap at 10 mM (beyond any assay)
+    df = df[np.isfinite(df["ec90_uM"]) & (df["ec90_uM"] < 1e4)]
 
     # aggregate the (rare) duplicate screens per compound x line
     agg = (df.groupby(["name", "depmap_id"], as_index=False)

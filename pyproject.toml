@@ -27,6 +27,8 @@ chem = ["rdkit>=2023.9"]
 # statsmodels is optional; the regression/FDR math is implemented on scipy/numpy
 # directly so the core does not depend on it.
 stats = ["statsmodels>=0.14"]
+# interactive HTML deliverables (reporting.interactive).
+viz = ["plotly>=5"]
 dev = ["pytest>=7.4"]
 
 [project.scripts]

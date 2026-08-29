@@ -49,3 +49,26 @@ def test_prism_ec90_from_params():
     assert abs(row["ec90_nM"] - 0.01 * 9 ** (1 / 1.0) * 1e3) < 1e-6   # ec50*9 -> nM
     assert row["indication"] == "HCC"
     assert abs(row["emax"] - 0.05) < 1e-9
+
+
+def test_ctrp_loader(tmp_path):
+    from warhead.io.ctrp import load_canonical
+    csv = tmp_path / "ctrp_export.csv"
+    pd.DataFrame([
+        # drug, cell, site, ic50, ec50, HS, E_inf(%), max_conc, fda
+        {"cellid": "C1", "ccl_name": "c1", "drug": "drugX", "target": "MEK",
+         "moa": "inhibitor", "fda": True, "primary_site": "large_intestine",
+         "tissueid": "Large Intestine", "ic50_uM": 0.02, "ec50_uM": 0.02, "HS": 1.0,
+         "E_inf": 5.0, "min_conc_uM": 0.002, "max_conc_uM": 40.0},
+        {"cellid": "C2", "ccl_name": "c2", "drug": "drugX", "target": "MEK",
+         "moa": "inhibitor", "fda": True, "primary_site": "liver",
+         "tissueid": "Liver", "ic50_uM": 0.05, "ec50_uM": 0.05, "HS": 2.0,
+         "E_inf": 10.0, "min_conc_uM": 0.002, "max_conc_uM": 40.0},
+    ]).to_csv(csv, index=False)
+    can = load_canonical(csv)
+    assert set(can["indication"]) == {"CRC", "HCC"}
+    r = can.set_index("model_id")
+    # EC90 = ec50 * 9^(1/HS); C1: 0.02*9 = 0.18 uM = 180 nM
+    assert abs(r.loc["C1", "ec90_nM"] - 180.0) < 1e-6
+    assert abs(r.loc["C1", "emax"] - 0.05) < 1e-9        # E_inf 5% -> 0.05
+    assert r.loc["C1", "clinical_phase"] == "FDA approved"

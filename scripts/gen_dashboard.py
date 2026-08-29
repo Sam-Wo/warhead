@@ -10,6 +10,7 @@ from warhead.analysis.nci60 import _annotated
 from warhead.analysis.pdxe import crc_response_ranking, load_metrics
 from warhead.analysis.screen_potency import rank_potency, selectivity
 from warhead.reporting.dashboard import render_dashboard
+from warhead.reporting.screen_curves import load_ctrp_curve_data, load_prism_curve_data
 from warhead.reporting.screen_data import load_dr_screens
 from warhead.reporting.screen_overlap import (DR_SOURCES, render_overlap_venn,
                                               tested_sets, three_set_counts)
@@ -27,6 +28,14 @@ A, B, C = (tested[s] for s in DR_SOURCES)
 overlap_counts = three_set_counts(A, B, C)
 overlap_totals = {s: len(tested[s]) for s in DR_SOURCES}
 
+# dose-response curves for the two wide-window screens (shared frames with gen_curves)
+prism_curves = {"kind": "fitted", "note": "PRISM fitted 4PL with Emax",
+                "summary": load_prism_curve_data(top=20)}
+ctrp_pooled, ctrp_curve_summary = load_ctrp_curve_data(top=20)
+ctrp_curves = {"kind": "measured", "note": "CTRP measured median + IQR",
+               "pooled": ctrp_pooled, "summary": ctrp_curve_summary}
+curves_by_src = {"PRISM Repurposing (secondary)": prism_curves, "CTRP v2": ctrp_curves}
+
 screens = [{"label": "Overlap", "type": "overlap", "meta": {}}]  # placeholder meta (skipped below)
 for src, short in [("GDSC2", "GDSC2"),
                    ("PRISM Repurposing (secondary)", "PRISM"),
@@ -34,7 +43,8 @@ for src, short in [("GDSC2", "GDSC2"),
     c = cans[src]
     screens.append({"label": short, "type": "dr", "meta": meta.loc[src].to_dict(),
                     "sel": {i: selectivity(c, i) for i in ("CRC", "HCC")},
-                    "rank": {i: rank_potency(c, i, emax_max=0.5) for i in ("CRC", "HCC")}})
+                    "rank": {i: rank_potency(c, i, emax_max=0.5) for i in ("CRC", "HCC")},
+                    "curves": curves_by_src.get(src)})
 
 screens.append({"label": "PDXE", "type": "pdxe", "meta": meta.loc["PDXE (Novartis)"].to_dict(),
                 "ranking": crc_response_ranking(load_metrics())})

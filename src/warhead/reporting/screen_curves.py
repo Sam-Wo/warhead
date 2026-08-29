@@ -137,6 +137,45 @@ def pool_measured_curves(raw: pd.DataFrame, *, nbins=14, min_bin_n=8, range_frac
     return pd.DataFrame(out)
 
 
+def load_ctrp_curve_data(interim="data/interim", *, top=20, indication="CRC"):
+    """(pooled, summary) for the CTRP top-N: pooled median+IQR from the raw wells
+    and a per-compound summary (target, ic50_uM, ec90_uM, max_conc_uM)."""
+    from warhead.analysis.screen_potency import rank_potency
+    interim = Path(interim)
+    ctrp = pd.read_pickle(interim / "ctrp_canonical.pkl")
+    ctop = rank_potency(ctrp, indication, emax_max=0.5).head(top).reset_index(drop=True)
+    raw = pd.read_csv(interim / "ctrp_curves.csv").rename(
+        columns={"drug": "compound", "dose_uM": "conc_uM", "cellid": "model_id"})
+    raw["viability"] = raw["viability"] / 100.0          # CTRP raw viability is a PERCENT
+    raw = raw[raw["compound"].isin(ctop["compound"])]
+    pooled = pool_measured_curves(raw)
+    maxc = raw.groupby("compound")["conc_uM"].max()
+    summ = pd.DataFrame({"compound": ctop["compound"], "target": ctop["target"],
+                         "ic50_uM": ctop["median_ic50_nM"] / 1e3, "ec90_uM": ctop["median_ec90_nM"] / 1e3,
+                         "max_conc_uM": ctop["compound"].map(maxc)})
+    summ = summ[summ["compound"].isin(pooled["compound"])].reset_index(drop=True)
+    return pooled, summ
+
+
+def load_prism_curve_data(interim="data/interim", *, top=20, indication="CRC"):
+    """Per-compound fitted-curve summary for the PRISM top-N: 4PL params median-
+    aggregated so the drawn curve and its IC50/EC90 markers stay consistent."""
+    from warhead.analysis.screen_potency import rank_potency
+    interim = Path(interim)
+    prism = pd.read_pickle(interim / "prism_canonical.pkl")
+    ptop = rank_potency(prism, indication, emax_max=0.5).head(top).reset_index(drop=True)
+    params = pd.read_pickle(interim / "prism_params.pkl")
+    agg = (params.groupby("name")
+           .agg(upper=("upper_limit", "median"), lower=("lower_limit", "median"),
+                slope=("slope", "median"), ec50_uM=("ec50", "median"), ic50_uM=("ic50", "median"))
+           .reset_index().rename(columns={"name": "compound"}))
+    summ = ptop.merge(agg, on="compound", how="inner")
+    summ["ec90_uM"] = summ["ec50_uM"] * 9.0 ** (1.0 / summ["slope"].abs())
+    summ = summ[np.isfinite(summ["ec90_uM"]) & (summ["ec90_uM"] < 1e4)]
+    return summ[["compound", "target", "ic50_uM", "ec50_uM", "slope",
+                 "upper", "lower", "ec90_uM"]].reset_index(drop=True)
+
+
 def render_measured_curves(pooled: pd.DataFrame, summary: pd.DataFrame, *, source, out_path):
     """pooled: compound, conc_uM, median, q1, q3.  summary: compound, target,
     ic50_uM, ec90_uM, max_conc_uM (for the markers)."""

@@ -47,6 +47,10 @@ warhead collateral         # -> reports/collateral_lethality_{CRC,HCC}.pdf + .xl
 # GDSC EC90 potency + HCC/CRC tissue-selectivity (REAL GDSC2 data):
 warhead gdsc               # needs data/raw/gdsc/GDSC2_fitted_dose_response.xlsx
 
+# G2b proliferation independence on REAL data (GDSC2 IC50 x DepMap growth rate):
+warhead g2b-real           # needs GDSC2 fitted + DepMap Model.csv +
+                           #   CRISPRInferredModelGrowthRate.csv (joined on SangerModelID)
+
 # Or without installing:
 PYTHONPATH=src python -m warhead demo
 

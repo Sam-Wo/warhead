@@ -63,7 +63,37 @@ def load_model_metadata(raw_dir: Path | str = DEPMAP_RAW) -> pd.DataFrame:
     return out
 
 
-def load_expression(raw_dir: Path | str = DEPMAP_RAW, genes: list[str] | None = None) -> pd.DataFrame:
+def load_growth_rate(raw_dir: Path | str = DEPMAP_RAW) -> pd.DataFrame:
+    """Screen-inferred relative growth rate per model (a proliferation proxy).
+
+    Expected file: ``CRISPRInferredModelGrowthRate.csv`` (columns per screen
+    library). Returns ModelID + ``growth`` (mean over available libraries).
+    """
+    raw_dir = Path(raw_dir)
+    path = _require(raw_dir / "CRISPRInferredModelGrowthRate.csv",
+                    "Download 'CRISPRInferredModelGrowthRate.csv' from the DepMap release")
+    g = pd.read_csv(path)
+    lib_cols = [c for c in g.columns if c != "ModelID"]
+    g["growth"] = g[lib_cols].mean(axis=1)
+    return g[["ModelID", "growth"]].dropna(subset=["growth"])
+
+
+def build_growth_model_meta(raw_dir: Path | str = DEPMAP_RAW) -> pd.DataFrame:
+    """Model metadata joined to growth rate, with a doubling-time PROXY.
+
+    ``doubling_time_hours`` here is ``1 / growth`` (arbitrary units): higher =
+    slower-growing, so WARHEAD's G2b sign convention (positive slope = loses
+    potency in slow lines = mitotic-dependent) applies unchanged. It is a proxy
+    for real doubling time, not a measured value.
+    Carries SangerModelID / COSMICID for joining GDSC.
+    """
+    raw_dir = Path(raw_dir)
+    m = pd.read_csv(_require(raw_dir / "Model.csv", "Download 'Model.csv' from the DepMap release"))
+    keep = [c for c in ["ModelID", "CellLineName", "StrippedCellLineName", "OncotreeCode",
+                        "OncotreeLineage", "SangerModelID", "COSMICID"] if c in m.columns]
+    meta = m[keep].merge(load_growth_rate(raw_dir), on="ModelID")
+    meta["doubling_time_hours"] = 1.0 / meta["growth"]
+    return meta
     """Long expression frame: ModelID, gene, expression (log2 TPM+1).
 
     Expected file: ``OmicsExpressionProteinCodingGenesTPMLogp1.csv`` (wide:

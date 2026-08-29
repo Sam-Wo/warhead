@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from warhead.io.gdsc import add_ec90, _mean_viability
+from warhead.io.gdsc import add_ec90, map_to_depmap, _mean_viability
 from warhead.analysis.gdsc_ec90 import selectivity
 
 
@@ -60,3 +60,21 @@ def test_selectivity_flags_indication_potent_compound():
     assert sel.loc["SelDrug", "delta_potency"] > 1.0     # ~2 logs more potent
     assert bool(sel.loc["SelDrug", "selective_potent"])
     assert not bool(sel.loc["FlatDrug", "selective"])
+
+
+def test_map_to_depmap_joins_on_sanger_id():
+    fitted = pd.DataFrame({
+        "drug_name": ["D1", "D1"], "sanger_model_id": ["SIDM1", "SIDM2"],
+        "ln_ic50": [0.0, 1.0], "auc": [.5, .6],
+    })
+    meta = pd.DataFrame({
+        "ModelID": ["ACH-1", "ACH-2"], "SangerModelID": ["SIDM1", "SIDM2"],
+        "doubling_time_hours": [24.0, 48.0], "OncotreeCode": ["LIHC", "COAD"],
+    })
+    out = map_to_depmap(fitted, meta)
+    assert set(out["ModelID"]) == {"ACH-1", "ACH-2"}
+    assert "doubling_time_hours" in out.columns
+    # a GDSC line with no DepMap match is dropped (inner join), not fabricated
+    fitted2 = pd.concat([fitted, pd.DataFrame([{
+        "drug_name": "D1", "sanger_model_id": "SIDM_UNKNOWN", "ln_ic50": 2.0, "auc": .7}])])
+    assert len(map_to_depmap(fitted2, meta)) == 2

@@ -183,6 +183,36 @@ def cmd_gdsc(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_g2b_real(args: argparse.Namespace) -> int:
+    from .analysis.gdsc_proliferation import run_real_g2b
+    from .reporting import render_real_g2b_report
+
+    ensure_dirs()
+    cfg = load_gates()
+    res = run_real_g2b(Path(args.raw_dir) / "gdsc", Path(args.raw_dir) / "depmap", config=cfg)
+    st = res.stats
+    print(f"real G2b (GDSC2 x DepMap growth): {res.n_lines} lines, {len(st)} compounds")
+    print(f"proliferation-independent (pass G2b): {res.gate.n_pass}/{res.gate.n_in}")
+    cols = ["compound_id", "target", "pathway", "std_slope", "q", "n_lines"]
+    with pd.option_context("display.width", 150, "display.max_columns", None):
+        print("\nMOST proliferation-DEPENDENT (top 10 positive slope):")
+        print(st.sort_values("std_slope", ascending=False).head(10)[cols].to_string(index=False))
+        print("\nMOST proliferation-INDEPENDENT among the potent set (flattest, not significant):")
+        flat = st[st["q"] > cfg["g2"]["proliferation"]["fdr_alpha"]]
+        print(flat.reindex(flat["std_slope"].abs().sort_values().index).head(10)[cols].to_string(index=False))
+
+    out_dir = Path(args.out)
+    pdf = render_real_g2b_report(
+        res.stats, res.sensitivity, res.model_meta,
+        out_path=out_dir / "proliferation_independence_real.pdf", config=cfg,
+    )
+    xlsx = out_dir / "proliferation_independence_real.xlsx"
+    with pd.ExcelWriter(xlsx, engine="openpyxl") as xw:
+        res.stats.sort_values("std_slope", ascending=False).to_excel(xw, sheet_name="g2b_real", index=False)
+    print(f"\nwrote {pdf}\nwrote {xlsx}")
+    return 0
+
+
 def cmd_g2b(args: argparse.Namespace) -> int:
     from .cascade import run_g2b_slice
     from .io.depmap import load_model_metadata
@@ -245,6 +275,11 @@ def build_parser() -> argparse.ArgumentParser:
     gd.add_argument("--dataset", default="GDSC2", choices=["GDSC1", "GDSC2"])
     gd.add_argument("--out", default=str(REPORTS))
     gd.set_defaults(func=cmd_gdsc)
+
+    gr = sub.add_parser("g2b-real", help="G2b proliferation independence on real GDSC2 x DepMap growth")
+    gr.add_argument("--raw-dir", default="data/raw")
+    gr.add_argument("--out", default=str(REPORTS))
+    gr.set_defaults(func=cmd_g2b_real)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

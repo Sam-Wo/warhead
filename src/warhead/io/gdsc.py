@@ -125,3 +125,14 @@ def add_ec90(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_with_ec90(raw_dir: Path | str = GDSC_RAW, dataset: str = "GDSC2") -> pd.DataFrame:
     return add_ec90(load_fitted(raw_dir, dataset))
+
+
+def map_to_depmap(fitted: pd.DataFrame, model_meta: pd.DataFrame) -> pd.DataFrame:
+    """Join GDSC curves to DepMap ModelID via SangerModelID (Sanger IDs are the
+    reliable bridge; COSMIC is the fallback). Adds ``ModelID`` and everything the
+    model_meta carries (doubling_time_hours, OncotreeCode, ...)."""
+    if "sanger_model_id" not in fitted.columns:
+        raise ValueError("GDSC fitted frame lacks sanger_model_id for mapping")
+    bridge = model_meta.rename(columns={"SangerModelID": "sanger_model_id"})
+    out = fitted.merge(bridge, on="sanger_model_id", how="inner", suffixes=("", "_dm"))
+    return out

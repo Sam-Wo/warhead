@@ -34,6 +34,10 @@ def render_proliferation_report(
     out_path: str | Path,
     compound_col: str = "compound_id",
     config: dict | None = None,
+    title: str = "WARHEAD - G2b Proliferation Independence",
+    subtitle: str = "Potency loss (log10 IC50) vs DepMap doubling time  -  keep the flat ones",
+    dt_label: str = "doubling time (h)",
+    ylabel: str = "log10(IC50 [M])",
 ) -> Path:
     cfg = config or load_gates()
     pcfg = cfg["g2"]["proliferation"]
@@ -50,10 +54,8 @@ def render_proliferation_report(
     st["passes_g2b"] = (st["q"] > alpha) & (st["n_lines"] >= min_lines)
 
     fig = plt.figure(figsize=(11, 8.5))
-    fig.suptitle("WARHEAD - G2b Proliferation Independence", color=RRB_MAROON,
-                 fontsize=16, fontweight="bold", x=0.5, y=0.97)
-    fig.text(0.5, 0.935, "Potency loss (log10 IC50) vs DepMap doubling time  -  keep the flat ones",
-             ha="center", fontsize=10, color="#444")
+    fig.suptitle(title, color=RRB_MAROON, fontsize=16, fontweight="bold", x=0.5, y=0.97)
+    fig.text(0.5, 0.935, subtitle, ha="center", fontsize=10, color="#444")
 
     gs = fig.add_gridspec(2, 2, height_ratios=[1.1, 1.0], hspace=0.42, wspace=0.28,
                           left=0.16, right=0.96, top=0.90, bottom=0.09)
@@ -88,8 +90,8 @@ def render_proliferation_report(
             ax.text(0.04, 0.06, f"std slope = {f.std_slope:+.2f}", transform=ax.transAxes,
                     fontsize=8, color="#222")
         ax.set_title(f"{'B' if ax_i == 0 else 'C'}.  {comp}\n({tag})", fontsize=9, loc="left")
-        ax.set_xlabel("doubling time (h)")
-        ax.set_ylabel("log10(IC50 [M])")
+        ax.set_xlabel(dt_label)
+        ax.set_ylabel(ylabel)
 
     n_pass = int(st["passes_g2b"].sum())
     fig.text(0.16, 0.02,

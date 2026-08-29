@@ -51,6 +51,11 @@ warhead gdsc               # needs data/raw/gdsc/GDSC2_fitted_dose_response.xlsx
 warhead g2b-real           # needs GDSC2 fitted + DepMap Model.csv +
                            #   CRISPRInferredModelGrowthRate.csv (joined on SangerModelID)
 
+# Same EC90/selectivity analysis on other public screens (source-agnostic):
+warhead prism              # PRISM Repurposing secondary (real Emax + clinical phase)
+warhead pdxe               # Novartis PDXE in-vivo CRC response (different modality)
+warhead clinical-tox       # curated clinical-validation + patient-toxicity table
+
 # Or without installing:
 PYTHONPATH=src python -m warhead demo
 

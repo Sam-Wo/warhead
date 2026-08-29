@@ -34,6 +34,31 @@ only `Model.csv` (0.6 MB) and `CRISPRInferredModelGrowthRate.csv` (0.04 MB); for
 real G2c you also need `CRISPRGeneEffect.csv` (~419 MB) and `OmicsCNGene.csv`
 (~817 MB), plus TCGA GISTIC2 for recurrence.
 
+### `prism/`  (PRISM Repurposing secondary, figshare)
+- `secondary-screen-dose-response-curve-parameters.csv` — figshare article 9393293
+  (`ndownloader.figshare.com/files/20237739`, ~252 MB). Fitted ic50/ec50/slope +
+  a FREE lower_limit (Emax) + name/moa/target/phase inline. Powers `warhead prism`.
+
+### `pdxe/`  (Novartis PDX Encyclopedia, Gao et al. 2015)
+- `pdxe_MOESM10.xlsx` — Nat Med supplement
+  (`static-content.springer.com/esm/art%3A10.1038%2Fnm.3954/MediaObjects/41591_2015_BFnm3954_MOESM10_ESM.xlsx`,
+  ~122 MB). Sheet `PCT curve metrics` = per model x treatment BestAvgResponse /
+  ResponseCategory / target; `PCT raw data` = Model -> Tumor Type. In-vivo tumour
+  response (no IC50/EC90; no HCC arm). Powers `warhead pdxe`.
+
+### CTRP v2  (BLOCKED without R)
+The classic `v20.*` files are gone from NCI; the only stable copy is a Zenodo
+PharmacoGx PharmacoSet **.rds** (record 3905470, ~43 MB) that needs R/Bioconductor
+to read (S4 object; not readable by pyreadr). The R-free Argonne IMPROVE CSA
+`response.txt` mirror carries CTRP's ic50/ec50/hs/einf but only for the ~43-line /
+78-drug cross-dataset intersection - too small for tissue selectivity. Add CTRP by
+exporting the PharmacoSet slots to the canonical schema from an R session.
+
+### NCI-60  (BLOCKED here; no liver lines)
+CellMiner's `nci60_Drug_act.zip` endpoint returned an empty body (needs the portal
+download form). NCI-60 also has NO liver cell line and only ~7 colon lines, so it
+cannot support HCC selectivity regardless.
+
 ## Other sources (deferred gates)
 See `WARHEAD.md` §2 and the docstring of each loader in `src/warhead/io/` for the
 source URL, access route, and target tidy schema (CTRP, GDSC, NCI-60, Tahoe,

@@ -229,6 +229,57 @@ def cmd_gdsc_curves(args: argparse.Namespace) -> int:
     return 0
 
 
+def _screen_reports(source_label, can, out_dir, stem):
+    from .analysis.screen_potency import rank_potency, selectivity
+    from .reporting.screen import render_screen_report
+    R = {i: rank_potency(can, i, emax_max=0.5) for i in ("CRC", "HCC")}
+    S = {i: selectivity(can, i) for i in ("CRC", "HCC")}
+    counts = {"total_compounds": int(can["compound"].nunique()), "total_lines": int(can["model_id"].nunique()),
+              "CRC_lines": int(can[can.indication == "CRC"].model_id.nunique()),
+              "HCC_lines": int(can[can.indication == "HCC"].model_id.nunique())}
+    pdf = render_screen_report(source_label, R, S, out_path=out_dir / f"{stem}.pdf", counts=counts)
+    with pd.ExcelWriter(out_dir / f"{stem}.xlsx", engine="openpyxl") as xw:
+        for i in ("CRC", "HCC"):
+            R[i].to_excel(xw, sheet_name=f"{i}_ec90_rank", index=False)
+            S[i].to_excel(xw, sheet_name=f"{i}_selectivity", index=False)
+    print(f"{source_label}: {counts}  ->  wrote {pdf}")
+    return R
+
+
+def cmd_prism(args: argparse.Namespace) -> int:
+    from .io.prism import load_canonical
+    ensure_dirs()
+    can = load_canonical(Path(args.raw_dir) / "prism", Path(args.raw_dir) / "depmap" / "Model.csv")
+    _screen_reports("PRISM Repurposing (secondary)", can, Path(args.out), "prism_ec90_selectivity")
+    return 0
+
+
+def cmd_pdxe(args: argparse.Namespace) -> int:
+    from .analysis.pdxe import load_metrics, crc_response_ranking, crc_response_selectivity
+    from .reporting.pdxe import render_pdxe_report
+    ensure_dirs()
+    m = load_metrics()
+    rank, sel = crc_response_ranking(m), crc_response_selectivity(m)
+    ncrc = int(m[m["Tumor Type"] == "CRC"].Model.nunique())
+    pdf = render_pdxe_report(rank, sel, out_path=Path(args.out) / "pdxe_crc_response.pdf", n_crc_models=ncrc)
+    with pd.ExcelWriter(Path(args.out) / "pdxe_crc_response.xlsx", engine="openpyxl") as xw:
+        rank.to_excel(xw, sheet_name="crc_response_rank", index=False)
+        sel.to_excel(xw, sheet_name="crc_response_selectivity", index=False)
+    print(f"PDXE CRC ({ncrc} models) -> wrote {pdf}")
+    return 0
+
+
+def cmd_clinical_tox(args: argparse.Namespace) -> int:
+    from .analysis.clinical_tox import clinical_tox_table
+    from .reporting.clinical_tox_fig import render_clinical_tox
+    ensure_dirs()
+    t = clinical_tox_table()
+    render_clinical_tox(t, out_path=Path(args.out) / "clinical_toxicity.pdf")
+    t.to_excel(Path(args.out) / "clinical_toxicity.xlsx", index=False)
+    print(f"clinical/toxicity table ({len(t)} compounds) -> wrote reports/clinical_toxicity.{{pdf,xlsx}}")
+    return 0
+
+
 def cmd_g2b_real(args: argparse.Namespace) -> int:
     from .analysis.gdsc_proliferation import run_real_g2b
     from .reporting import render_real_g2b_report
@@ -334,6 +385,19 @@ def build_parser() -> argparse.ArgumentParser:
     gc.add_argument("--fitted", action="store_true", help="force fitted-model curves even if raw data is present")
     gc.add_argument("--out", default=str(REPORTS))
     gc.set_defaults(func=cmd_gdsc_curves)
+
+    pm = sub.add_parser("prism", help="PRISM Repurposing EC90 ranking + HCC/CRC selectivity (real data)")
+    pm.add_argument("--raw-dir", default="data/raw")
+    pm.add_argument("--out", default=str(REPORTS))
+    pm.set_defaults(func=cmd_prism)
+
+    px = sub.add_parser("pdxe", help="Novartis PDXE in-vivo CRC response ranking + selectivity")
+    px.add_argument("--out", default=str(REPORTS))
+    px.set_defaults(func=cmd_pdxe)
+
+    ct = sub.add_parser("clinical-tox", help="curated clinical-validation + patient-toxicity table")
+    ct.add_argument("--out", default=str(REPORTS))
+    ct.set_defaults(func=cmd_clinical_tox)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

@@ -35,24 +35,28 @@ def indication_ranking(df: pd.DataFrame, indication: str, *, min_lines: int = 5)
 
     def _agg(g: pd.DataFrame) -> pd.Series:
         n = len(g)
+        med_ec90 = float(np.nanmedian(g["ec90_uM"]))
+        med_max = float(np.nanmedian(g["max_conc_uM"]))
         return pd.Series({
             "target": g["target"].iloc[0],
             "pathway": g["pathway"].iloc[0],
             "n_lines": n,
-            "median_ec90_uM": float(np.nanmedian(g["ec90_uM"])),
-            "median_ic50_uM": float(np.nanmedian(g["ic50_uM"])),
+            "median_ec90_nM": med_ec90 * 1e3,
+            "median_ic50_nM": float(np.nanmedian(g["ic50_uM"])) * 1e3,
+            "median_max_conc_nM": med_max * 1e3,
             "median_auc": float(np.nanmedian(g["auc"])),
             "frac_ec90_within_range": float((g["ec90_range"] == "within").mean()),
-            "frac_ic50_within_range": float((g["ic50_range"] == "within").mean()),
+            # the reported (median) EC90 sits beyond the median tested max dose
+            "median_extrapolated": bool(med_ec90 > med_max),
         })
 
     agg = sub.groupby("drug_name").apply(_agg, include_groups=False).reset_index()
     agg = agg[agg["n_lines"] >= min_lines]
-    return agg.sort_values("median_ec90_uM").reset_index(drop=True)
+    return agg.sort_values("median_ec90_nM").reset_index(drop=True)
 
 
 def selectivity(df: pd.DataFrame, indication: str, *, min_in: int = 5, min_out: int = 20,
-                potent_ic50_max_uM: float = 1.0) -> pd.DataFrame:
+                potent_ic50_max_nM: float = 1000.0) -> pd.DataFrame:
     """Per-compound potency in-indication vs the rest of the panel.
 
     Potency here is ``-log10(IC50 [uM])`` - the DIRECTLY fitted value, not the
@@ -64,7 +68,7 @@ def selectivity(df: pd.DataFrame, indication: str, *, min_in: int = 5, min_out: 
     """
     tcga = INDICATION_TCGA[indication]
     work = df.copy()
-    work["potency"] = _potency(work["ic50_uM"])
+    work["potency"] = _potency(work["ic50_uM"] * 1e3)   # -log10(IC50 in nM)
     work = work[np.isfinite(work["potency"])]
 
     rows = []
@@ -86,10 +90,10 @@ def selectivity(df: pd.DataFrame, indication: str, *, min_in: int = 5, min_out: 
             "target": g["target"].iloc[0],
             "pathway": g["pathway"].iloc[0],
             "n_in": int(pin.size), "n_out": int(pout.size),
-            "potency_in": med_in,            # -log10 IC50 (uM), in indication
+            "potency_in": med_in,            # -log10 IC50 (nM), in indication
             "potency_out": med_out,
             "delta_potency": med_in - med_out,   # >0 = more potent in indication
-            "median_ic50_in_uM": float(10 ** (-med_in)),
+            "median_ic50_in_nM": float(10 ** (-med_in)),
             "cliffs_delta": float(cliffs),
             "p": float(p),
         })
@@ -99,7 +103,7 @@ def selectivity(df: pd.DataFrame, indication: str, *, min_in: int = 5, min_out: 
         # Selective AND actually potent: a tissue difference on an inactive
         # compound (IC50 ~ mM) is noise, not a mechanistic advantage.
         out["selective"] = (out["q"] < 0.1) & (out["delta_potency"] > 0)
-        out["selective_potent"] = out["selective"] & (out["median_ic50_in_uM"] <= potent_ic50_max_uM)
+        out["selective_potent"] = out["selective"] & (out["median_ic50_in_nM"] <= potent_ic50_max_nM)
         out = out.sort_values(["selective_potent", "delta_potency"],
                               ascending=[False, False]).reset_index(drop=True)
     return out

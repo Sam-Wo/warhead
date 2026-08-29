@@ -172,8 +172,16 @@ def cmd_gdsc(args: argparse.Namespace) -> int:
         nsel = int(sels[ind]["selective_potent"].sum()) if len(sels[ind]) else 0
         print(f"  {ind}: lowest-EC90 -> {', '.join(top)}  |  selective&potent = {nsel}")
 
+    counts = {
+        "total_compounds": int(df["drug_name"].nunique()),
+        "total_lines": int(df["cell_line"].nunique()),
+        "CRC_lines": int(df.loc[df["tcga_desc"] == "COREAD", "cell_line"].nunique()),
+        "HCC_lines": int(df.loc[df["tcga_desc"] == "LIHC", "cell_line"].nunique()),
+    }
+    print(f"dataset: {counts['total_compounds']} compounds x {counts['total_lines']} lines "
+          f"(CRC {counts['CRC_lines']}, HCC {counts['HCC_lines']})")
     out_dir = Path(args.out)
-    pdf = render_gdsc_report(rankings, sels, out_path=out_dir / "gdsc_ec90_selectivity.pdf")
+    pdf = render_gdsc_report(rankings, sels, out_path=out_dir / "gdsc_ec90_selectivity.pdf", counts=counts)
     xlsx = out_dir / "gdsc_ec90_ranking.xlsx"
     with pd.ExcelWriter(xlsx, engine="openpyxl") as xw:
         for ind in ("CRC", "HCC"):

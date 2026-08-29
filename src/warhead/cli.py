@@ -191,6 +191,44 @@ def cmd_gdsc(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gdsc_curves(args: argparse.Namespace) -> int:
+    from .analysis.gdsc_curves import extract_raw_curves, pool_by_conc
+    from .io.gdsc import load_with_ec90
+    from .reporting.gdsc_curves import render_top15_curves, render_top15_fitted_curves
+
+    ensure_dirs()
+    gdir = Path(args.raw_dir) / "gdsc"
+    df = load_with_ec90(gdir, dataset=args.dataset)
+
+    # top-N most potent by median IC50 (all lines), summary per drug_id
+    summ = (df.groupby(["drug_id", "drug_name"]).agg(
+        target=("target", "first"),
+        median_ic50_uM=("ic50_uM", "median"),
+        median_ec90_uM=("ec90_uM", "median"),
+        median_scal=("scal", "median"),
+        min_conc_uM=("min_conc_uM", "median"),
+        max_conc_uM=("max_conc_uM", "median"),
+    ).reset_index().sort_values("median_ic50_uM").head(args.top))
+    print(f"top {args.top} by median IC50: {', '.join(summ['drug_name'])}")
+
+    raw_csv = gdir / "GDSC2_public_raw_data.csv"
+    out_pdf = Path(args.out) / "gdsc_top15_curves.pdf"
+    if raw_csv.exists() and not args.fitted:
+        # measured curves from the raw well-level data
+        drug_ids = [int(x) for x in summ["drug_id"]]
+        print(f"streaming {raw_csv} ({raw_csv.stat().st_size/1e9:.2f} GB) for {len(drug_ids)} drugs...")
+        pooled = pool_by_conc(extract_raw_curves(raw_csv, drug_ids))
+        out = render_top15_curves(pooled, summ, out_path=out_pdf)
+    else:
+        # fitted-model curves (raw well data not present); shows tested window vs EC90
+        if not raw_csv.exists():
+            print("raw well-level file not present -> plotting GDSC FITTED curves "
+                  "(download GDSC2_public_raw_data for measured points)")
+        out = render_top15_fitted_curves(summ, out_path=out_pdf)
+    print(f"wrote {out}")
+    return 0
+
+
 def cmd_g2b_real(args: argparse.Namespace) -> int:
     from .analysis.gdsc_proliferation import run_real_g2b
     from .reporting import render_real_g2b_report
@@ -288,6 +326,14 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--raw-dir", default="data/raw")
     gr.add_argument("--out", default=str(REPORTS))
     gr.set_defaults(func=cmd_g2b_real)
+
+    gc = sub.add_parser("gdsc-curves", help="measured dose-response curves for the most potent GDSC2 compounds")
+    gc.add_argument("--raw-dir", default="data/raw")
+    gc.add_argument("--dataset", default="GDSC2", choices=["GDSC1", "GDSC2"])
+    gc.add_argument("--top", type=int, default=15)
+    gc.add_argument("--fitted", action="store_true", help="force fitted-model curves even if raw data is present")
+    gc.add_argument("--out", default=str(REPORTS))
+    gc.set_defaults(func=cmd_gdsc_curves)
 
     g = sub.add_parser("g2b", help="run the slice on real PRISM + DepMap data")
     g.add_argument("--raw-dir", default="data/raw")

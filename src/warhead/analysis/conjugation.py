@@ -124,3 +124,43 @@ def delivery_scorecard(canonical: pd.DataFrame, ranking: pd.DataFrame, clin: pd.
     df["prolif_class"] = df.apply(_cls, axis=1)
     df["g2b_independent"] = df["prolif_class"] == "independent"
     return df
+
+
+def add_chemistry(df: pd.DataFrame, smiles_map: dict, *, config=None) -> pd.DataFrame:
+    """Phase B: attach the chemical gates from each compound's structure (RDKit).
+
+    - G5 conjugatable handle: SMARTS match for amine/-OH/-SH/-COOH (gates.g5).
+      A handle is NECESSARY but not sufficient - "a handle in the pharmacophore is
+      not a handle"; SAR-tolerant positioning needs ChEMBL SAR (not done here).
+    - G4 bystander-permissive physchem: MW / TPSA / cLogP against the gates.yaml
+      windows (gates.g4). cLogP is used as a cLogD(7.4) proxy (RDKit gives no cLogD;
+      the true Guo B-score needs their trained model) - so this is 'physchem-permissive',
+      not a validated bystander call.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import Crippen, Descriptors
+
+    from ..gates.g4_bystander import tag_bystander
+    from ..gates.g5_conjugation import find_handles
+
+    out = df.copy()
+    recs = []
+    for cmp in out["compound"]:
+        smi = smiles_map.get(cmp)
+        mol = Chem.MolFromSmiles(smi) if smi else None
+        if mol is None:
+            recs.append({"smiles_ok": False, "mw": np.nan, "tpsa": np.nan, "clogp": np.nan,
+                         "g5_handles": "", "g5_handle": np.nan})
+            continue
+        handles = find_handles(smi, config=config)
+        present = [k for k, v in handles.items() if v]
+        recs.append({"smiles_ok": True, "mw": float(Descriptors.MolWt(mol)),
+                     "tpsa": float(Descriptors.TPSA(mol)), "clogp": float(Crippen.MolLogP(mol)),
+                     "g5_handles": ", ".join(present), "g5_handle": bool(present)})
+    chem = pd.DataFrame(recs, index=out.index)
+    out = pd.concat([out, chem], axis=1)
+    # G4 bystander tag via the gate's physchem windows (cLogP as the cLogD proxy)
+    phys = out[["mw", "tpsa", "clogp"]].rename(columns={"clogp": "clogd"})
+    tagged = tag_bystander(phys, config=config)
+    out["g4_bystander"] = tagged["bystander_tag"].where(out["smiles_ok"], other=np.nan)
+    return out

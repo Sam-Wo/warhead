@@ -43,8 +43,8 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
              "≥20% of lines AND median Emax < 0.15 (complete kill).",
              fontsize=8.7, color="#333")
     fig.text(0.01, 0.928,
-             "'gap' = log10 units the median IC50 sits ABOVE 1 nM = the potency a medchem campaign must close "
-             "before conjugation is worth attempting.  G2a efflux + G4/G5 chemistry = Phase B (greyed).",
+             "'gap' = log10 units the median IC50 sits ABOVE 1 nM = the potency a medchem campaign must close.  "
+             "G5 = conjugatable handle present (necessary, not SAR-verified);  G4 = physchem in the bystander window.",
              fontsize=8.7, color="#333")
 
     # columns
@@ -56,12 +56,16 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
             ("gap", "gap↑"), ("emax", "Emax"), ("g1", "G1 bar"),
             ("prolif", "G2b prolif"), ("efflux", "G2a"), ("handle", "G5"),
             ("bystd", "G4"), ("payload", "known payload?")]
+    has_chem = "g5_handle" in df.columns
+    grey_keys = ("efflux",) if has_chem else ("efflux", "handle", "bystd")
     for key, lab in hdrs:
-        grey = key in ("efflux", "handle", "bystd")
         ax.text(xc[key], hy, lab, fontsize=7.6, fontweight="bold",
-                color="#bbb" if grey else RRB)
-    ax.text(xc["efflux"], hy - 0.028, "― Phase B (needs structures / expression) ―",
-            fontsize=6.6, color="#bbb")
+                color="#bbb" if key in grey_keys else RRB)
+    if has_chem:
+        ax.text(xc["efflux"], hy - 0.028, "G2a pending", fontsize=6.4, color="#bbb")
+    else:
+        ax.text(xc["efflux"], hy - 0.028, "― Phase B (needs structures / expression) ―",
+                fontsize=6.6, color="#bbb")
 
     gnorm = Normalize(vmin=0, vmax=2.5)
     row_h = (hy - 0.05) / max(n, 1)
@@ -90,8 +94,18 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
         pcol = {"independent": _PASS, "mitotic-dependent": _MITO}.get(pc, "#999")
         ax.text(xc["prolif"], y, pc, fontsize=6.6, va="center", ha="center", color=pcol,
                 fontweight="bold" if pc == "mitotic-dependent" else "normal")
-        for key in ("efflux", "handle", "bystd"):
-            ax.text(xc[key], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
+        ax.text(xc["efflux"], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
+        if has_chem:
+            for key, col in (("handle", "g5_handle"), ("bystd", "g4_bystander")):
+                v = r.get(col)
+                if pd.isna(v):
+                    ax.text(xc[key], y, "n/a", fontsize=6, va="center", ha="center", color="#ccc")
+                else:
+                    ax.text(xc[key], y, "✓" if v else "✗", fontsize=8, va="center", ha="center",
+                            fontweight="bold", color=_PASS if v else _FAIL)
+        else:
+            for key in ("handle", "bystd"):
+                ax.text(xc[key], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
         pay = str(r.get("adc_payload_status") or "")
         is_known = pay and "not a payload" not in pay.lower()
         ax.text(xc["payload"], y, ("● " if is_known else "") + (pay[:26] if pay else "–"),

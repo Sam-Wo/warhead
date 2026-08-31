@@ -216,3 +216,59 @@ def add_efflux(df: pd.DataFrame, canonical: pd.DataFrame, expr_csv="data/interim
                  "_pass": "g2a_pass"})
     keep["g2a_substrate"] = ~keep["g2a_pass"]
     return df.merge(keep, on="compound", how="left")
+
+
+# HPA tissue used for each gates.yaml DLT compartment. marrow/GI/lung are direct;
+# cornea and peripheral nerve have no bulk-atlas equivalent, so a neural / ocular
+# proxy stands in (flagged as a proxy in the report).
+_DLT_TISSUE = {"bone_marrow_HSC": "bone marrow", "GI_crypt": "small intestine",
+               "cornea": "retina", "alveolar_type_II": "lung", "peripheral_nerve": "spinal cord"}
+_DLT_PROXY = {"cornea": "retina proxy", "peripheral_nerve": "spinal-cord proxy"}
+
+
+def add_window(df: pd.DataFrame, hpa_tsv="data/interim/hpa_consensus.tsv", *, config=None) -> pd.DataFrame:
+    """G6 therapeutic window: is the payload TARGET expressed in the recurring DLT
+    organs? For each DLT compartment, rank the target among all genes in that tissue
+    (HPA consensus nTPM) -> percentile. Low across all five = window signal
+    (gates.g6.score_window). Multi-subunit targets take the WORST-CASE (max) percentile.
+
+    Note: an ADC's DLT is often driven by the payload's mechanism hitting normal
+    proliferating cells regardless of the target - this scores only target-mediated,
+    on-target off-tumour risk, one input to the window, not the whole story.
+    FAERS class->tox disproportionality is still pending.
+    """
+    from ..gates.g6_window import score_window
+
+    hpa = pd.read_csv(hpa_tsv, sep="\t")
+    comps = list(_DLT_TISSUE)
+    # per-tissue percentile of each gene (rank among all genes in that tissue)
+    pct = {}
+    for comp in comps:
+        t = hpa[hpa["Tissue"] == _DLT_TISSUE[comp]]
+        pct[comp] = dict(zip(t["Gene name"], t["nTPM"].rank(pct=True) * 100.0))
+
+    def _genes(target):
+        return [g.strip() for g in re.split(r"[;,/]", str(target)) if g.strip() and g.strip().lower() != "none"]
+
+    rows = []
+    for _, r in df.iterrows():
+        genes = _genes(r.get("target"))
+        rec = {}
+        for comp in comps:
+            vals = [pct[comp][g] for g in genes if g in pct[comp]]
+            rec[comp] = max(vals) if vals else np.nan          # worst-case subunit
+        rows.append(rec)
+    wexpr = pd.DataFrame(rows, index=df.index)
+    scored = wexpr.dropna(how="any")
+    win = pd.Series(np.nan, index=df.index, dtype="object")
+    if len(scored):
+        win.loc[scored.index] = score_window(scored, config=config)["window_ok"].values
+    out = df.copy()
+    out["g6_window_ok"] = win
+    # the organ carrying the most on-target risk (highest percentile) + its value
+    valid = wexpr.notna().any(axis=1)
+    organ = pd.Series(np.nan, index=df.index, dtype="object")
+    organ.loc[valid] = wexpr.loc[valid].idxmax(axis=1).map(lambda c: _DLT_PROXY.get(c, c))
+    out["g6_risk_organ"] = organ
+    out["g6_risk_pct"] = wexpr.max(axis=1)
+    return out

@@ -48,14 +48,14 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
              fontsize=8.7, color="#333")
 
     # columns
-    xc = {"compound": 0.0, "target": 0.155, "ic50": 0.34, "gap": 0.40, "emax": 0.46,
-          "g1": 0.52, "prolif": 0.585, "efflux": 0.70, "handle": 0.76, "bystd": 0.82,
-          "payload": 0.885}
+    xc = {"compound": 0.0, "target": 0.15, "ic50": 0.325, "gap": 0.385, "emax": 0.445,
+          "g1": 0.505, "prolif": 0.565, "efflux": 0.675, "handle": 0.725, "bystd": 0.775,
+          "g6": 0.825, "payload": 0.88}
     hy = 0.90
     hdrs = [("compound", "compound"), ("target", "target"), ("ic50", "med IC50"),
             ("gap", "gap↑"), ("emax", "Emax"), ("g1", "G1 bar"),
             ("prolif", "G2b prolif"), ("efflux", "G2a"), ("handle", "G5"),
-            ("bystd", "G4"), ("payload", "known payload?")]
+            ("bystd", "G4"), ("g6", "G6 win"), ("payload", "known payload?")]
     has_chem = "g5_handle" in df.columns
     has_efflux = "g2a_substrate" in df.columns
     grey_keys = set()
@@ -63,6 +63,8 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
         grey_keys.add("efflux")
     if not has_chem:
         grey_keys |= {"handle", "bystd"}
+    if "g6_window_ok" not in df.columns:
+        grey_keys.add("g6")
     for key, lab in hdrs:
         ax.text(xc[key], hy, lab, fontsize=7.6, fontweight="bold",
                 color="#bbb" if key in grey_keys else RRB)
@@ -120,6 +122,15 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
         else:
             for key in ("handle", "bystd"):
                 ax.text(xc[key], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
+        if "g6_window_ok" in df.columns:
+            w = r.get("g6_window_ok")
+            if pd.isna(w):
+                ax.text(xc["g6"], y, "n/a", fontsize=6, va="center", ha="center", color="#ccc")
+            else:
+                ax.text(xc["g6"], y, "✓" if w else "✗", fontsize=8, va="center", ha="center",
+                        fontweight="bold", color=_PASS if w else _MITO)
+        else:
+            ax.text(xc["g6"], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
         pay = str(r.get("adc_payload_status") or "")
         is_known = pay and "not a payload" not in pay.lower()
         ax.text(xc["payload"], y, ("● " if is_known else "") + (pay[:26] if pay else "–"),
@@ -130,9 +141,10 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
              "substrate ✗, fails like MMAE/DM1).  G2b = Spearman vs DepMap growth rate (proxy; indicative).",
              fontsize=6.9, color="#777")
     fig.text(0.01, 0.006,
-             "G5 handle is necessary, not SAR-verified; G4 is a cLogP-proxy physchem window, not the Guo B-score. "
-             "No hit clears G1 as a free drug -> the output is a chemotype for a potency campaign, not a molecule "
-             "to conjugate as-is.", fontsize=6.9, color="#777")
+             "G5 handle necessary not SAR-verified; G4 a cLogP-proxy window, not the Guo B-score; G6 = target's "
+             "HPA percentile in 5 DLT organs, win ✓ if ≤25 in all (on-target only; cornea/nerve via retina/spinal-"
+             "cord proxy; FAERS pending). No hit clears G1 free-drug -> chemotype for a potency campaign.",
+             fontsize=6.9, color="#777")
     fig.savefig(out_path, format=out_path.suffix.lstrip(".").lower() or "pdf", dpi=150)
     plt.close(fig)
     return out_path

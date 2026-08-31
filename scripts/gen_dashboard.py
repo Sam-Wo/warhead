@@ -6,9 +6,12 @@ dashboard (EC90/IC50 potency, HCC/CRC selectivity, clinical/ADC context).
 from pathlib import Path
 import tempfile
 
+import numpy as np
+
 from warhead.analysis.clinical_tox import clinical_tox_table
 from warhead.analysis.conjugation import (add_chemistry, add_efflux, add_window,
                                           delivery_scorecard, growth_lookup)
+from warhead.analysis.indications import disease_line_set, label_indication
 from warhead.analysis.nci60 import _annotated
 from warhead.analysis.pdxe import crc_response_ranking, load_metrics
 from warhead.analysis.screen_potency import rank_potency, selectivity
@@ -68,6 +71,21 @@ screens.append({"label": "PDXE", "type": "pdxe", "meta": meta.loc["PDXE (Novarti
 sel = pd.read_pickle("data/interim/nci60_crc_selectivity.pkl").sort_values("delta_z", ascending=False)
 screens.append({"label": "NCI-60", "type": "nci60", "meta": meta.loc["NCI-60"].to_dict(),
                 "selectivity": _annotated(sel)})
+
+# AML selectivity (CTRP + GDSC; PRISM's secondary subset has no blood lines). CTRP
+# lines relabelled via DepMap; GDSC rebuilt from gdsc2_ec90 with LAML -> AML.
+_ctrp_aml = label_indication(cans["CTRP v2"],
+                             disease_line_set(cans["CTRP v2"]["model_id"].unique(), "Acute Myeloid Leukemia"), "AML")
+_g = pd.read_pickle("data/interim/gdsc2_ec90.pkl")
+_gmap = {"COREAD": "CRC", "LIHC": "HCC", "LAML": "AML"}
+_gdsc_aml = pd.DataFrame({"source": "GDSC2", "compound": _g.drug_name, "target": _g.target, "moa": _g.pathway,
+                          "model_id": _g.cell_line, "indication": _g.tcga_desc.map(_gmap).fillna("other"),
+                          "ic50_nM": _g.ic50_uM * 1e3, "ec90_nM": _g.ec90_uM * 1e3, "emax": np.nan,
+                          "ec90_extrapolated": _g.ec90_range.eq("extrapolated"), "clinical_phase": pd.NA})
+_aml = {"CTRP v2": _ctrp_aml, "GDSC2": _gdsc_aml}
+screens.append({"label": "AML", "type": "aml", "meta": {},
+                "sel": {s: selectivity(f, "AML") for s, f in _aml.items()},
+                "rank": {s: rank_potency(f, "AML", emax_max=0.5) for s, f in _aml.items()}})
 
 # gate-cascade reference (defines the G1-G6 the Conjugation tab applies)
 screens.append({"label": "Cascade", "type": "cascade", "meta": {}})

@@ -138,6 +138,21 @@ def _curves_band_div(pooled, summary, div_id, ncol=4, markers=True):
     return fig.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, default_width="100%")
 
 
+def _sel_pair_div(pairs, div_id, height=430):
+    """Selectivity scatter for an arbitrary set of (subplot_title, sel_frame) pairs -
+    e.g. one screen per column for a single indication."""
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=1, cols=len(pairs), subplot_titles=[t for t, _ in pairs],
+                        horizontal_spacing=.1)
+    for i, (t, sel) in enumerate(pairs):
+        fig.add_trace(_sel_traces(sel, t), row=1, col=i + 1)
+        fig.add_hline(y=0, line=dict(color="#999", width=1, dash="dot"), row=1, col=i + 1)
+        fig.update_xaxes(title_text="-log10(median IC50 / nM)", row=1, col=i + 1)
+    fig.update_yaxes(title_text="selectivity = log-potency(in)-(rest)", row=1, col=1)
+    fig.update_layout(template="plotly_white", height=height, margin=dict(t=40, b=50))
+    return fig.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, default_width="100%")
+
+
 def _bar_div(labels, values, colors, title, xtitle, div_id, height=460):
     import plotly.graph_objects as go
     fig = go.Figure(go.Bar(x=values, y=labels, orientation="h",
@@ -488,6 +503,21 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                 'cLogP-proxy window, not the Guo B-score (exatecan itself fails it, so read G4 as indicative); '
                 'G6 uses HPA with retina/spinal-cord proxies for cornea/nerve, on-target risk only '
                 '(FAERS class→tox pending).</p>')
+        elif sc["type"] == "aml":
+            body.append('<h3>AML potency &amp; selectivity - CTRP v2 + GDSC2</h3>')
+            body.append(
+                '<p style="color:#444;font-size:13px;max-width:900px">Same selectivity analysis as the CRC/HCC '
+                'tabs, on the two screens with AML lines (CTRP 30, GDSC 26). PRISM is absent &mdash; its secondary '
+                'subset has no blood-cancer lines. <b style="color:#B87C22">Caveat:</b> leukaemia lines are '
+                'globally hypersensitive in vitro (the whole cloud shifts up, median &Delta; +0.2 to +0.5 logs), '
+                'so plain significance flags ~90% of compounds. Read the <b>top-right</b> of each panel (largest '
+                '&Delta;) &mdash; those recover the real AML dependencies: Aurora&nbsp;B (barasertib), MCL1 '
+                '(AZD5991), PLK1, BRD4, KIF11, cytarabine.</p>')
+            body.append(_sel_pair_div([("CTRP v2 AML", sc["sel"]["CTRP v2"]),
+                                       ("GDSC2 AML", sc["sel"]["GDSC2"])], "sel_AML"))
+            for scr in ("CTRP v2", "GDSC2"):
+                body.append(f"<h3>Top 20 by EC90 - {scr} (AML)</h3>")
+                body.append(_table_cov(sc["rank"][scr].head(20), tested))
         elif sc["type"] == "cascade":
             body.append(_cascade_div())
         elif sc["type"] == "pdxe":

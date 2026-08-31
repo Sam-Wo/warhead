@@ -6,9 +6,13 @@ dashboard (EC90/IC50 potency, HCC/CRC selectivity, clinical/ADC context).
 from pathlib import Path
 import tempfile
 
+from warhead.analysis.clinical_tox import clinical_tox_table
+from warhead.analysis.conjugation import (add_chemistry, add_efflux, add_window,
+                                          delivery_scorecard, growth_lookup)
 from warhead.analysis.nci60 import _annotated
 from warhead.analysis.pdxe import crc_response_ranking, load_metrics
 from warhead.analysis.screen_potency import rank_potency, selectivity
+from warhead.io.pubchem import fetch_smiles
 from warhead.reporting.dashboard import render_dashboard
 from warhead.reporting.screen_curves import load_ctrp_curve_data, load_prism_curve_data
 from warhead.reporting.screen_data import load_dr_screens
@@ -39,7 +43,14 @@ ctrp_curves = {"note": "CTRP measured, median + IQR across lines", "markers": Tr
                "pooled": ctrp_pooled, "summary": ctrp_curve_summary}
 curves_by_src = {"PRISM Repurposing (secondary)": prism_curves, "CTRP v2": ctrp_curves}
 
-screens = [{"label": "Overlap", "type": "overlap", "meta": {}}]  # placeholder meta (skipped below)
+# conjugation-suitability scorecard (CTRP CRC top-20) for the synthesis tab
+ctrp = cans["CTRP v2"]
+_sc = delivery_scorecard(ctrp, rank_potency(ctrp, "CRC", emax_max=0.5), clinical_tox_table(),
+                         indication="CRC", growth_fn=growth_lookup(), top=20)
+_sc = add_window(add_efflux(add_chemistry(_sc, fetch_smiles(_sc["compound"].tolist())), ctrp))
+
+screens = [{"label": "Overlap", "type": "overlap", "meta": {}},        # placeholder meta (skipped below)
+           {"label": "Conjugation", "type": "conjugation", "meta": {}, "scorecard": _sc}]
 for src, short in [("GDSC2", "GDSC2"),
                    ("PRISM Repurposing (secondary)", "PRISM"),
                    ("CTRP v2", "CTRP v2")]:

@@ -19,6 +19,7 @@ from warhead.reporting.screen_overlap import norm_name
 RRB = "#6E1426"
 _WEAK = "#C98A2E"
 _GREY = "#B7BAC2"
+_GREEN = "#2E7D6B"
 
 # short letter per dose-response screen, for the cross-screen coverage badge
 _COV_ORDER = [("GDSC2", "G"), ("PRISM Repurposing (secondary)", "P"), ("CTRP v2", "C")]
@@ -212,6 +213,42 @@ def _overlap_table(counts, totals):
             f'<th>compounds</th></tr></thead><tbody>{body}</tbody></table>')
 
 
+def _flag_cell(v, *, good_is_true=True):
+    """✓/✗/n-a cell. good_is_true=False flips the sense (e.g. efflux substrate: True is bad)."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return '<td style="text-align:center;color:#ccc">n/a</td>'
+    ok = bool(v) if good_is_true else (not bool(v))
+    return (f'<td style="text-align:center;color:{_GREEN if ok else _WEAK};font-weight:700">'
+            f'{"✓" if ok else "✗"}</td>')
+
+
+def _scorecard_table(df):
+    head = ["compound", "target", "med IC50", "gap↑", "G1", "G2a", "G2b", "G5", "G4", "G6", "known payload?"]
+    th = "".join(f"<th>{html.escape(h)}</th>" for h in head)
+    rows = []
+    for _, r in df.iterrows():
+        gap = r.get("potency_gap_log10")
+        pay = str(r.get("adc_payload_status") or "")
+        known = pay and "not a payload" not in pay.lower()
+        tds = [
+            f'<td>{html.escape(str(r["compound"]))}</td>',
+            f'<td style="font-family:monospace;font-size:11px;color:#666">{html.escape(str(r.get("target"))[:24])}</td>',
+            f'<td>{_num(r.get("median_ic50_nM"))} nM</td>',
+            f'<td style="text-align:center">{"-" if pd.isna(gap) else f"{gap:.1f}"}</td>',
+            _flag_cell(r.get("g1_potency_pass")),
+            _flag_cell(r.get("g2a_substrate"), good_is_true=False),
+            _flag_cell(r.get("g2b_independent")),
+            _flag_cell(r.get("g5_handle")),
+            _flag_cell(r.get("g4_bystander")),
+            _flag_cell(r.get("g6_window_ok")),
+            f'<td style="font-size:11px;color:{RRB if known else "#999"}">'
+            f'{("● " if known else "") + html.escape(pay[:26]) if pay else "-"}</td>',
+        ]
+        rows.append("<tr>" + "".join(tds) + "</tr>")
+    return (f'<table class="rank"><thead><tr>{th}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
 def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_counts=None,
                      overlap_totals=None):
     from plotly.offline import get_plotlyjs
@@ -252,6 +289,29 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                         'A compound tested in only one screen has no independent confirmation; the '
                         '"also in" column on each screen tab flags which of the other two libraries '
                         'contain each ranked compound.</p>')
+        elif sc["type"] == "conjugation":
+            body.append('<h3>Conjugation-suitability ledger - CTRP v2 top-20 (CRC)</h3>')
+            body.append(
+                '<p style="color:#444;font-size:13px;max-width:900px">Free-drug potency is not ADC '
+                'potency. Each column is a separate, <b>conjunctive</b> question a payload must pass '
+                '(no averaging): <b>G1</b> sub-nM potency + complete kill; <b>G2a</b> not an ABCB1/ABCG2 '
+                'efflux substrate; <b>G2b</b> proliferation-independent; <b>G5</b> a conjugatable handle; '
+                '<b>G4</b> bystander-permissive physchem; <b>G6</b> target not enriched in the DLT organs. '
+                '<b>✓</b> = passes, <b>✗</b> = fails, n/a = not assessable.</p>')
+            body.append(
+                '<p style="color:#6E1426;font-size:13px;max-width:900px;font-weight:600">Headline: 0/20 '
+                'clear the G1 potency bar as free drugs (gaps of 0.5-2.2 logs), and 0/20 pass G6 - they '
+                'target broadly-essential machinery. The output is a chemotype for a potency campaign, not '
+                'a molecule to conjugate as-is; triptolide / CR-1-31B / dinaciclib / brefeldin A pass the '
+                'most delivery+chemistry gates.</p>')
+            body.append(_scorecard_table(sc["scorecard"]))
+            body.append(
+                '<p style="color:#777;font-size:11.5px;max-width:900px">gap = log10 units the median IC50 '
+                'sits above 1 nM. G2a: log10 IC50 vs ABCB1/ABCG2 expression (std slope ≥0.25 &amp; q&lt;0.05 '
+                '= substrate). G2b: pan-panel Spearman vs DepMap growth (proxy; indicative). G5 handle is '
+                'necessary not SAR-verified; G4 is a cLogP-proxy window, not the Guo B-score; G6 uses HPA '
+                'expression with retina/spinal-cord proxies for cornea/nerve and covers on-target risk only '
+                '(FAERS class→tox pending).</p>')
         elif sc["type"] == "pdxe":
             rk = sc["ranking"]
             colors = [RRB if v < 0 else _GREY for v in rk["median_response"]]

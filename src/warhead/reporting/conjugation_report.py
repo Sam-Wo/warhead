@@ -57,15 +57,20 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
             ("prolif", "G2b prolif"), ("efflux", "G2a"), ("handle", "G5"),
             ("bystd", "G4"), ("payload", "known payload?")]
     has_chem = "g5_handle" in df.columns
-    grey_keys = ("efflux",) if has_chem else ("efflux", "handle", "bystd")
+    has_efflux = "g2a_substrate" in df.columns
+    grey_keys = set()
+    if not has_efflux:
+        grey_keys.add("efflux")
+    if not has_chem:
+        grey_keys |= {"handle", "bystd"}
     for key, lab in hdrs:
         ax.text(xc[key], hy, lab, fontsize=7.6, fontweight="bold",
                 color="#bbb" if key in grey_keys else RRB)
-    if has_chem:
-        ax.text(xc["efflux"], hy - 0.028, "G2a pending", fontsize=6.4, color="#bbb")
-    else:
+    if not has_chem:
         ax.text(xc["efflux"], hy - 0.028, "― Phase B (needs structures / expression) ―",
                 fontsize=6.6, color="#bbb")
+    elif not has_efflux:
+        ax.text(xc["efflux"], hy - 0.028, "G2a pending", fontsize=6.4, color="#bbb")
 
     gnorm = Normalize(vmin=0, vmax=2.5)
     row_h = (hy - 0.05) / max(n, 1)
@@ -94,7 +99,16 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
         pcol = {"independent": _PASS, "mitotic-dependent": _MITO}.get(pc, "#999")
         ax.text(xc["prolif"], y, pc, fontsize=6.6, va="center", ha="center", color=pcol,
                 fontweight="bold" if pc == "mitotic-dependent" else "normal")
-        ax.text(xc["efflux"], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
+        if has_efflux:
+            sub = r.get("g2a_substrate")
+            if pd.isna(sub):
+                ax.text(xc["efflux"], y, "n/a", fontsize=6, va="center", ha="center", color="#ccc")
+            else:
+                # substrate = fails G2a (pumped out); not a substrate = passes
+                ax.text(xc["efflux"], y, "✗" if sub else "✓", fontsize=8, va="center", ha="center",
+                        fontweight="bold", color=_MITO if sub else _PASS)
+        else:
+            ax.text(xc["efflux"], y, "·", fontsize=9, va="center", ha="center", color="#ccc")
         if has_chem:
             for key, col in (("handle", "g5_handle"), ("bystd", "g4_bystander")):
                 v = r.get(col)
@@ -112,11 +126,13 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
                 fontsize=6.3, va="center", color=RRB if is_known else "#999")
 
     fig.text(0.01, 0.018,
-             "G2b prolif = pan-panel Spearman(log10 IC50, DepMap CRISPR growth rate), BH q<0.05; indicative "
-             "(growth-rate proxy; efflux substrates e.g. taxanes are confounded - see G2a).", fontsize=6.9, color="#777")
+             "G2a efflux = log10 IC50 vs ABCB1/ABCG2 expression across the panel (std slope ≥0.25 & q<0.05 = "
+             "substrate ✗, fails like MMAE/DM1).  G2b = Spearman vs DepMap growth rate (proxy; indicative).",
+             fontsize=6.9, color="#777")
     fig.text(0.01, 0.006,
-             "Authoritative G2b = `warhead g2b-real`. No hit clears G1 as a free drug -> the output is a "
-             "chemotype for a potency campaign, not a molecule to conjugate as-is.", fontsize=6.9, color="#777")
+             "G5 handle is necessary, not SAR-verified; G4 is a cLogP-proxy physchem window, not the Guo B-score. "
+             "No hit clears G1 as a free drug -> the output is a chemotype for a potency campaign, not a molecule "
+             "to conjugate as-is.", fontsize=6.9, color="#777")
     fig.savefig(out_path, format=out_path.suffix.lstrip(".").lower() or "pdf", dpi=150)
     plt.close(fig)
     return out_path

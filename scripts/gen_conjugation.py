@@ -11,7 +11,8 @@ per-compound SMILES + RDKit) and appear as pending columns.
 import pandas as pd
 
 from warhead.analysis.clinical_tox import clinical_tox_table
-from warhead.analysis.conjugation import add_chemistry, delivery_scorecard, growth_lookup
+from warhead.analysis.conjugation import (add_chemistry, add_efflux, delivery_scorecard,
+                                          growth_lookup)
 from warhead.analysis.screen_potency import rank_potency
 from warhead.io.pubchem import fetch_smiles
 from warhead.reporting.conjugation_report import render_scorecard
@@ -25,16 +26,17 @@ sheets = {}
 for ind in ("CRC", "HCC"):
     rk = rank_potency(ctrp, ind, emax_max=0.5)
     sc = delivery_scorecard(ctrp, rk, clin, indication=ind, growth_fn=growth, top=20)
-    # Phase B: fetch structures + run the chemical gates G4/G5
+    # Phase B: fetch structures + run the chemical gates G4/G5, then G2a efflux
     smiles = fetch_smiles(sc["compound"].tolist())
     sc = add_chemistry(sc, smiles)
+    sc = add_efflux(sc, ctrp)
     out = render_scorecard(sc, out_path=f"reports/conjugation_scorecard_{ind}.pdf",
                            indication=ind, screen=SCREEN)
     print("wrote", out, f"| G1 pass {sc.g1_potency_pass.sum()}/{len(sc)} | "
           f"G2b indep {sc.g2b_independent.sum()}/{len(sc)} | "
+          f"G2a substrate {int(sc.g2a_substrate.fillna(False).sum())}/{len(sc)} | "
           f"G5 handle {int(sc.g5_handle.fillna(False).sum())}/{len(sc)} | "
-          f"G4 bystd {int(sc.g4_bystander.fillna(False).sum())}/{len(sc)} | "
-          f"SMILES {int(sc.smiles_ok.sum())}/{len(sc)}")
+          f"G4 bystd {int(sc.g4_bystander.fillna(False).sum())}/{len(sc)}")
     sheets[ind] = sc
 
 with pd.ExcelWriter("reports/conjugation_scorecard.xlsx", engine="openpyxl") as xw:

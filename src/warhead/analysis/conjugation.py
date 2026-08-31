@@ -33,6 +33,22 @@ def _norm(s) -> str:
     return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
 
+def ach_resolver(depmap_dir="data/raw/depmap"):
+    """Return a fn model_id -> DepMap ModelID (ACH-######) or None. Passes ACH ids
+    through; bridges cell-line names via Model.csv StrippedCellLineName."""
+    mdl = pd.read_csv(Path(depmap_dir) / "Model.csv")
+    name2ach = {_norm(v): k for k, v in zip(mdl["ModelID"], mdl["StrippedCellLineName"])
+                if pd.notna(v)}
+    valid = set(mdl["ModelID"])
+
+    def _r(model_id):
+        if str(model_id).startswith("ACH-"):
+            return model_id if model_id in valid else None
+        return name2ach.get(_norm(model_id))
+
+    return _r
+
+
 def growth_lookup(depmap_dir="data/raw/depmap"):
     """Return a fn model_id -> DepMap inferred growth rate. Accepts either a DepMap
     ModelID (ACH-######) or a cell-line name (bridged via Model.csv StrippedCellLineName)."""
@@ -164,3 +180,39 @@ def add_chemistry(df: pd.DataFrame, smiles_map: dict, *, config=None) -> pd.Data
     tagged = tag_bystander(phys, config=config)
     out["g4_bystander"] = tagged["bystander_tag"].where(out["smiles_ok"], other=np.nan)
     return out
+
+
+def add_efflux(df: pd.DataFrame, canonical: pd.DataFrame, expr_csv="data/interim/depmap_abcb1_abcg2.csv",
+               *, depmap_dir="data/raw/depmap", config=None) -> pd.DataFrame:
+    """G2a efflux dependence: regress the resistance axis (log10 IC50) on ABCB1/ABCG2
+    expression across the panel (gates.gate_g2a). A strong positive slope on either
+    transporter = the released payload is pumped out = fails the way MMAE/DM1 fail.
+
+    Pan-panel (all lines, not just the indication) - power comes from the full
+    expression range. `expr_csv` is the 2-gene extract from the DepMap expression
+    matrix (scripts/fetch_depmap_efflux_expression.py).
+    """
+    from ..gates.g2_delivery import gate_g2a
+
+    resolve = ach_resolver(depmap_dir)
+    ex = pd.read_csv(expr_csv)
+    expr_long = ex.melt(id_vars="ModelID", value_vars=["ABCB1", "ABCG2"],
+                        var_name="gene", value_name="expression")
+
+    comps = df["compound"].tolist()
+    sub = canonical[canonical["compound"].isin(comps)].copy()
+    sub["ModelID"] = sub["model_id"].map(resolve)
+    sub = sub[sub["ModelID"].notna() & np.isfinite(sub["ic50_nM"]) & (sub["ic50_nM"] > 0)]
+    sens = pd.DataFrame({"compound": sub["compound"], "ModelID": sub["ModelID"],
+                         "sensitivity": np.log10(sub["ic50_nM"].to_numpy(float))})
+
+    res = gate_g2a(sens, expr_long, compound_col="compound", model_col="ModelID",
+                   gene_col="gene", expr_col="expression", config=config)
+    stats = pd.concat([res.passed.assign(_pass=True), res.failed.assign(_pass=False)],
+                      ignore_index=True)
+    keep = stats[["compound", "std_slope_ABCB1", "std_slope_ABCG2",
+                  "max_efflux_std_slope", "max_efflux_q", "_pass"]].rename(
+        columns={"max_efflux_std_slope": "efflux_std_slope", "max_efflux_q": "efflux_q",
+                 "_pass": "g2a_pass"})
+    keep["g2a_substrate"] = ~keep["g2a_pass"]
+    return df.merge(keep, on="compound", how="left")

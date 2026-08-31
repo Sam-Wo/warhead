@@ -11,7 +11,7 @@ import numpy as np
 from warhead.analysis.clinical_tox import clinical_tox_table
 from warhead.analysis.conjugation import (add_chemistry, add_efflux, add_window,
                                           delivery_scorecard, growth_lookup)
-from warhead.analysis.indications import disease_line_set, label_indication
+from warhead.analysis.indications import GASTRIC_CODES, label_indication, line_set
 from warhead.analysis.nci60 import _annotated
 from warhead.analysis.pdxe import crc_response_ranking, load_metrics
 from warhead.analysis.screen_potency import rank_potency, selectivity
@@ -72,20 +72,46 @@ sel = pd.read_pickle("data/interim/nci60_crc_selectivity.pkl").sort_values("delt
 screens.append({"label": "NCI-60", "type": "nci60", "meta": meta.loc["NCI-60"].to_dict(),
                 "selectivity": _annotated(sel)})
 
-# AML selectivity (CTRP + GDSC; PRISM's secondary subset has no blood lines). CTRP
-# lines relabelled via DepMap; GDSC rebuilt from gdsc2_ec90 with LAML -> AML.
-_ctrp_aml = label_indication(cans["CTRP v2"],
-                             disease_line_set(cans["CTRP v2"]["model_id"].unique(), "Acute Myeloid Leukemia"), "AML")
+# Extra-indication selectivity tabs (same analysis as CRC/HCC). CTRP/PRISM lines are
+# relabelled via DepMap Oncotree; GDSC is rebuilt from gdsc2_ec90 with its TCGA code.
+_FULL = {"GDSC2": "GDSC2", "PRISM": "PRISM Repurposing (secondary)", "CTRP v2": "CTRP v2"}
 _g = pd.read_pickle("data/interim/gdsc2_ec90.pkl")
-_gmap = {"COREAD": "CRC", "LIHC": "HCC", "LAML": "AML"}
-_gdsc_aml = pd.DataFrame({"source": "GDSC2", "compound": _g.drug_name, "target": _g.target, "moa": _g.pathway,
-                          "model_id": _g.cell_line, "indication": _g.tcga_desc.map(_gmap).fillna("other"),
-                          "ic50_nM": _g.ic50_uM * 1e3, "ec90_nM": _g.ec90_uM * 1e3, "emax": np.nan,
-                          "ec90_extrapolated": _g.ec90_range.eq("extrapolated"), "clinical_phase": pd.NA})
-_aml = {"CTRP v2": _ctrp_aml, "GDSC2": _gdsc_aml}
-screens.append({"label": "AML", "type": "aml", "meta": {},
-                "sel": {s: selectivity(f, "AML") for s, f in _aml.items()},
-                "rank": {s: rank_potency(f, "AML", emax_max=0.5) for s, f in _aml.items()}})
+
+
+def _indication_tab(ind, screen_labels, *, disease=None, codes=None, gdsc_tcga=None, caveat=""):
+    frames = {}
+    for s in screen_labels:
+        if s == "GDSC2":
+            gmap = {"COREAD": "CRC", "LIHC": "HCC", gdsc_tcga: ind}
+            frames[s] = pd.DataFrame({
+                "source": "GDSC2", "compound": _g.drug_name, "target": _g.target, "moa": _g.pathway,
+                "model_id": _g.cell_line, "indication": _g.tcga_desc.map(gmap).fillna("other"),
+                "ic50_nM": _g.ic50_uM * 1e3, "ec90_nM": _g.ec90_uM * 1e3, "emax": np.nan,
+                "ec90_extrapolated": _g.ec90_range.eq("extrapolated"), "clinical_phase": pd.NA})
+        else:
+            base = cans[_FULL[s]]
+            ls = line_set(base["model_id"].unique(), disease_substr=disease, codes=codes)
+            frames[s] = label_indication(base, ls, ind)
+    return {"label": ind, "type": "indication", "meta": {}, "indication": ind, "screens": screen_labels,
+            "caveat": caveat,
+            "sel": {s: selectivity(frames[s], ind) for s in screen_labels},
+            "rank": {s: rank_potency(frames[s], ind, emax_max=0.5) for s in screen_labels}}
+
+
+screens.append(_indication_tab(
+    "AML", ["CTRP v2", "GDSC2"], disease="Acute Myeloid Leukemia", gdsc_tcga="LAML",
+    caveat=('Same selectivity analysis as the CRC/HCC tabs, on the two screens with AML lines (CTRP 30, '
+            'GDSC 26). PRISM is absent - its secondary subset has no blood-cancer lines. '
+            '<b style="color:#B87C22">Caveat:</b> leukaemia lines are globally hypersensitive in vitro '
+            '(the cloud shifts up, median &Delta; +0.2 to +0.5 logs), so plain significance flags ~90% of '
+            'compounds. Read the <b>top-right</b> of each panel (largest &Delta;) - those recover the real '
+            'AML dependencies: Aurora&nbsp;B (barasertib), MCL1 (AZD5991), PLK1, BRD4, KIF11, cytarabine.')))
+screens.append(_indication_tab(
+    "Gastric", ["CTRP v2", "GDSC2", "PRISM"], codes=GASTRIC_CODES, gdsc_tcga="STAD",
+    caveat=('Same selectivity analysis as CRC/HCC, on the three screens with gastric (stomach-'
+            'adenocarcinoma) lines (CTRP 30, GDSC 24, PRISM 17). Gastric is a solid tumour, so there is no '
+            'global-sensitivity confound as in AML - read the <b>top-right</b> (selective &amp; potent) for '
+            'gastric-preferential hits. PRISM has the fewest lines, so its &Delta; estimates are the noisiest.')))
 
 # gate-cascade reference (defines the G1-G6 the Conjugation tab applies)
 screens.append({"label": "Cascade", "type": "cascade", "meta": {}})

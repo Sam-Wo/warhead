@@ -503,20 +503,14 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                 'cLogP-proxy window, not the Guo B-score (exatecan itself fails it, so read G4 as indicative); '
                 'G6 uses HPA with retina/spinal-cord proxies for cornea/nerve, on-target risk only '
                 '(FAERS class→tox pending).</p>')
-        elif sc["type"] == "aml":
-            body.append('<h3>AML potency &amp; selectivity - CTRP v2 + GDSC2</h3>')
-            body.append(
-                '<p style="color:#444;font-size:13px;max-width:900px">Same selectivity analysis as the CRC/HCC '
-                'tabs, on the two screens with AML lines (CTRP 30, GDSC 26). PRISM is absent &mdash; its secondary '
-                'subset has no blood-cancer lines. <b style="color:#B87C22">Caveat:</b> leukaemia lines are '
-                'globally hypersensitive in vitro (the whole cloud shifts up, median &Delta; +0.2 to +0.5 logs), '
-                'so plain significance flags ~90% of compounds. Read the <b>top-right</b> of each panel (largest '
-                '&Delta;) &mdash; those recover the real AML dependencies: Aurora&nbsp;B (barasertib), MCL1 '
-                '(AZD5991), PLK1, BRD4, KIF11, cytarabine.</p>')
-            body.append(_sel_pair_div([("CTRP v2 AML", sc["sel"]["CTRP v2"]),
-                                       ("GDSC2 AML", sc["sel"]["GDSC2"])], "sel_AML"))
-            for scr in ("CTRP v2", "GDSC2"):
-                body.append(f"<h3>Top 20 by EC90 - {scr} (AML)</h3>")
+        elif sc["type"] == "indication":
+            ind = sc["indication"]; scrs = sc["screens"]
+            body.append(f'<h3>{html.escape(ind)} potency &amp; selectivity - {" + ".join(scrs)}</h3>')
+            if sc.get("caveat"):
+                body.append(f'<p style="color:#444;font-size:13px;max-width:900px">{sc["caveat"]}</p>')
+            body.append(_sel_pair_div([(f"{s} {ind}", sc["sel"][s]) for s in scrs], f"sel_{sid}"))
+            for scr in scrs:
+                body.append(f"<h3>Top 20 by EC90 - {scr} ({ind})</h3>")
                 body.append(_table_cov(sc["rank"][scr].head(20), tested))
         elif sc["type"] == "cascade":
             body.append(_cascade_div())

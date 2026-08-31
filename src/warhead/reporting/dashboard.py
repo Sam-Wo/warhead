@@ -249,6 +249,179 @@ def _scorecard_table(df):
             f'<tbody>{"".join(rows)}</tbody></table>')
 
 
+# ---- Cascade (gate reference) tab -----------------------------------------
+# thresholds mirror config/gates.yaml; a "thr" value renders as a mono block, a
+# "caveat" value as muted text, anything else as inline HTML. Symbols as entities.
+_CASCADE_GATES = [
+    {"id": "G1", "name": "Potency, done properly", "status": ("ok", "implemented + tested"),
+     "asks": '<span class="q">Is the free drug potent enough to survive becoming an ADC?</span> An ADC '
+             'delivers very little payload per cell (low DAR, inefficient internalisation and lysosomal '
+             'escape), so a payload must be far more potent than an ordinary drug.',
+     "rows": [("Method", "Refit every curve as a 4-parameter logistic with an <b>interval-censored (Tobit)</b> "
+               "likelihood; keep IC50, Emax and Hill <b>separate</b>. Never use AUC. Assay floor/ceiling are "
+               "censored, not imputed to the lowest dose."),
+              ("Threshold", ("thr", "gate:  IC50 &le; <b>1.0 nM</b> in &ge; <b>20%</b> of lines\n"
+                             "   AND  median Emax &lt; <b>0.15</b>  (complete kill)\n"
+                             "refit: 4PL &middot; floor 0.02 &middot; ceiling 1.05 &middot; &ge;5 pts\n"
+                             "       hill [0.3, 8.0] &middot; Emax [-0.2, 1.2]")),
+              ("Data", "Any screen's per-line IC50 + Emax (GDSC / PRISM / CTRP&hellip;)."),
+              ("Caveat", ("caveat", "Absolute IC50 is <b>not comparable across screens</b> &mdash; see below."))],
+     "callout": ("Choosing a sensible potency cutoff",
+                 'The <span class="mono">1 nM / 20%</span> bar is calibrated to <b>PRISM</b>, where the reference '
+                 'payloads read true: exatecan <code>0.10 nM</code> (82% of lines sub-nM), SN-38 <code>0.93 nM</code>, '
+                 'maytansinol <code>0.99 nM</code>. It must <b>not</b> be applied to absolute IC50 from a '
+                 'differently-run screen &mdash; CTRP\'s 72&nbsp;h CellTiter-Glo reads a systematic <b>~4.7&times; '
+                 'weaker</b> (SN-38 is <code>121 nM</code> there), so the same molecule fails a bar it clears '
+                 'elsewhere. This is assay design, not biology. <b>The fix:</b> apply G1 <em>per screen, anchored '
+                 'to a reference payload run in that same screen</em> &mdash; pass &asymp; within ~1 log of '
+                 'exatecan/SN-38 in that screen. Distance-to-a-known-payload is portable; absolute nM is not.')},
+    {"id": "G2", "name": "Does the mechanism survive delivery?", "status": None,
+     "asks": "Three independent ways a potent free drug still fails once it is a conjugate: it gets pumped back "
+             "out, it only works on fast-dividing cells, or its target offers no tumour-selective hook.",
+     "subs": [
+         {"name": "G2a &middot; Efflux dependence", "tag": "ABCB1 / ABCG2", "status": ("ok", "implemented + tested"),
+          "rows": [("Asks", "Is it a P-gp / BCRP substrate &mdash; the shared failure mode of MMAE and DM1?"),
+                   ("Method", "Regress the resistance axis (log10 IC50) on transporter expression across the panel. "
+                    "A strong positive slope = IC50 rises with transporter level = substrate."),
+                   ("Threshold", ("thr", "substrate if  std slope &ge; <b>0.25</b>  on either gene\n"
+                                  "              AND  BH q &lt; <b>0.05</b>")),
+                   ("Data", "DepMap expression (ABCB1, ABCG2) &times; screen IC50.")]},
+         {"name": "G2b &middot; Proliferation independence", "tag": "the HCC lever", "status": ("ok", "implemented + report"),
+          "rows": [("Asks", "Does potency depend on doubling time? A payload for a low-proliferative-index "
+                    "indication (MASH-HCC) must kill cells that are not dividing."),
+                   ("Method", "Regress log10 IC50 on doubling time. <b>Keep</b> compounds whose slope is not "
+                    "distinguishable from zero. Auristatins steep-positive &rarr; fail; RNAPII / translation / "
+                    "degraders flat &rarr; pass. Slow lines up-weighted (equal-width bins)."),
+                   ("Threshold", ("thr", "pass if  BH q &gt; <b>0.05</b>  (slope not significant)\n"
+                                  "std_slope_max <b>0.15</b> advisory &middot; &ge;25 lines &middot; balance, 5 bins")),
+                   ("Data", "Screen IC50 &times; DepMap growth rate (doubling-time proxy).")]},
+         {"name": "G2c &middot; Collateral-lethality scan", "tag": "generalises POLR2A", "status": ("ok", "implemented + report"),
+          "rows": [("Asks", "Is there a payload <em>target</em> whose recurrent hemizygous loss in the tumour "
+                    "opens a dependency the normal tissue does not share?"),
+                   ("Method", "For every gene: does CN-loss in TCGA-COAD/READ or LIHC shift the DepMap Chronos "
+                    "dependency leftward (Mann&ndash;Whitney, FDR)? Exclude pan-essentials. Anchor on POLR2A "
+                    "(17p, with TP53); candidate ME2 (18q, with SMAD4)."),
+                   ("Threshold", ("thr", "CN loss &lt; <b>-0.3</b> &middot; recurrence &ge; <b>0.20</b> of tumours\n"
+                                  "pan-essential cut Chronos &lt; <b>-0.85</b> &middot; BH &lt; 0.05\n"
+                                  "positive control <b>POLR2A</b> must recover first")),
+                   ("Data", "DepMap CRISPR (Chronos) + CN &times; TCGA GISTIC2.")]}]},
+    {"id": "G3", "name": "MOA novelty &amp; orthogonality", "status": None,
+     "asks": "Two questions: is the mechanism genuinely new relative to known payload classes, and &mdash; for "
+             "the dual-payload program &mdash; is it orthogonal to exatecan's resistance?",
+     "subs": [
+         {"name": "G3a &middot; Embed &amp; locate the holes", "status": ("defer", "deferred &mdash; contract"),
+          "rows": [("Asks", "How far is the candidate from the nearest known-payload class in mechanism space?"),
+                   ("Method", "Joint embedding of LINCS L1000 + Tahoe pseudobulk + JUMP morphology; annotate known "
+                    "payload regions from ADCdb; score distance to nearest centroid <b>conditional on passing G1</b>."),
+                   ("Threshold", ("thr", "min distance to known centroid &ge; <b>0.35</b>")),
+                   ("Data", "LINCS L1000 &middot; Tahoe &middot; JUMP-CP &middot; ADCdb.")]},
+         {"name": "G3b &middot; Orthogonal-resistance search", "tag": "the exatecan partner", "status": ("ok", "implemented + report"),
+          "rows": [("Asks", "Which compound is most potent on exactly the lines exatecan cannot handle?"),
+                   ("Method", "Regress out the Top1i component (SLFN11 axis), rank by residual potency on the "
+                    "Top1i-resistant (SLFN11-low) lines, stratified by ABCB1 so it is not just efflux escape."),
+                   ("Threshold", ("thr", "SLFN11-low = lower <b>tertile</b> (0.333)\n"
+                                  "partner's own SLFN11 slope &le; <b>0.1</b> &middot; top <b>50</b>")),
+                   ("Data", "PRISM / CTRP sensitivity &times; DepMap SLFN11, ABCB1.")]}]},
+    {"id": "G4", "name": "Bystander competence", "status": ("partial", "physchem window (partial)"),
+     "asks": '<span class="q">Will the released payload diffuse into neighbouring antigen-negative cells?</span> '
+             'A <b>design choice</b>, not a universal good &mdash; essential for a heterogeneous CRC tumour, a '
+             'liability for a narrow-window target. <b>Tag, do not filter.</b>',
+     "rows": [("Method", "Do not rebuild the predictor: use the Guo <em>et&nbsp;al.</em> 2024 graph-attention "
+               "B-score. Layer on charge state at lysosomal pH 4.8 vs cytosol 7.2 (the MMAE/MMAF split) and "
+               "cLogD(7.4), TPSA, MW via RDKit."),
+              ("Threshold", ("thr", "B-score &ge; <b>1.5</b>  (Guo et al.)\n"
+                             "cLogD <b>[-1, 3]</b> &middot; TPSA &le; <b>120</b> &middot; MW &le; <b>1000</b>")),
+              ("Data", "RDKit over the G1-passing set &cap; COCONUT / NPAtlas / ChEMBL."),
+              ("Caveat", ("caveat", "Currently the physchem window only, cLogP as a cLogD proxy &mdash; not the "
+                          "trained B-score. Exatecan itself fails this window, so read G4 as <b>indicative</b>."))]},
+    {"id": "G5", "name": "Conjugatability", "status": ("partial", "SMARTS done (partial)"),
+     "asks": '<span class="q">Is there a conjugatable handle at a position SAR says tolerates substitution?</span> '
+             'A handle in the pharmacophore is not a handle.',
+     "rows": [("Method", "SMARTS match for a primary/secondary amine, hydroxyl, thiol or carboxylic acid, then "
+               "cross-reference the scaffold's ChEMBL SAR series for a substitutable position."),
+              ("Threshold", ("thr", "handle &isin; { 1&deg;/2&deg; amine, -OH, -SH, -COOH }\n"
+                             "present AND at an SAR-tolerant position")),
+              ("Data", "Structure (SMILES via PubChem) + ChEMBL SAR."),
+              ("Caveat", ("caveat", "Handle detection is wired; the SAR-position check is pending, so a pass is "
+                          "<b>necessary, not sufficient</b>."))]},
+    {"id": "G6", "name": "Therapeutic window", "status": ("partial", "expression done (partial)"),
+     "asks": '<span class="q">Is the payload\'s target enriched in the organs that recur as ADC dose-limiting '
+             'toxicities?</span> Payload class sets the DLT organ far more than the antigen does.',
+     "rows": [("Method", "(1) FAERS disproportionality (ROR / PRR, shrinkage) on ADC regimens, stratified by "
+               "payload class &rarr; an empirical class&rarr;toxicity map. (2) Score the target's normal-tissue "
+               "expression across the five recurring DLT compartments; low across all five is the window signal."),
+              ("Threshold", ("thr", "target &le; <b>25th percentile</b> in ALL of:\n"
+                             "  HSC/marrow &middot; GI crypt &middot; cornea\n"
+                             "  alveolar type II &middot; peripheral nerve")),
+              ("Data", "GTEx / HPA normal-tissue expression &middot; FAERS (ADC regimens)."),
+              ("Caveat", ("caveat", "HPA expression implemented (retina / spinal-cord proxies for cornea / nerve); "
+                          "scores <b>on-target risk only</b>. FAERS class&rarr;tox map still pending."))]},
+]
+
+
+def _cascade_rows(rows):
+    cells = []
+    for i, (label, val) in enumerate(rows):
+        first = " first" if i == 0 else ""
+        if isinstance(val, tuple) and val[0] == "thr":
+            dd = f'<span class="thr">{val[1]}</span>'
+        elif isinstance(val, tuple) and val[0] == "caveat":
+            dd = f'<span class="caveat">{val[1]}</span>'
+        else:
+            dd = val
+        cells.append(f'<dt class="l{first}">{label}</dt><dd class="l{first}">{dd}</dd>')
+    return f'<dl class="grid">{"".join(cells)}</dl>'
+
+
+def _cascade_card(g):
+    h = ['<div class="gate"><div class="gate-head">',
+         f'<span class="badge">{g["id"]}</span>',
+         f'<h3 class="gate-name">{g["name"]}</h3>']
+    if g.get("status"):
+        h.append(f'<span class="pill {g["status"][0]}"><span class="dot"></span>{g["status"][1]}</span>')
+    h.append(f'</div><p class="asks">{g["asks"]}</p>')
+    if g.get("rows"):
+        h.append(_cascade_rows(g["rows"]))
+    for s in g.get("subs", []):
+        h.append('<div class="g-sub"><div class="sub-name">' + s["name"])
+        if s.get("tag"):
+            h.append(f'<span class="sub-tag">{s["tag"]}</span>')
+        if s.get("status"):
+            h.append(f'<span class="pill {s["status"][0]}"><span class="dot"></span>{s["status"][1]}</span>')
+        h.append('</div>' + _cascade_rows(s["rows"]) + '</div>')
+    if g.get("callout"):
+        h.append(f'<div class="callout"><div class="ct">&#9670; {g["callout"][0]}</div>{g["callout"][1]}</div>')
+    h.append('</div>')
+    return "".join(h)
+
+
+def _cascade_div():
+    rules = [("Conjunctive", "Gates are AND-ed. A fatal gate is fatal; nothing is averaged away."),
+             ("Nothing dropped silently", 'Every gate returns <span class="mono">(passed, failed, reason)</span>.'),
+             ("Free drug &ne; ADC", "Linker, DAR and internalisation move IC50 1&ndash;2 logs. Every output is a "
+              "hypothesis <em>for conjugation</em>."),
+             ("Identity is resolved", "Compound &rarr; InChIKey; cell line &rarr; DepMap ModelID, at ingest.")]
+    parts = ['<div class="cascade">',
+             '<p class="intro">An <b>explicit conjunctive filter</b> for prioritising novel ADC payload classes. '
+             'Six gates, applied in order. A candidate that fails any gate is dead regardless of how it scores '
+             'elsewhere &mdash; there is <b>no composite score</b>. Every threshold below is a stated, arguable '
+             'number that lives in <span class="mono">config/gates.yaml</span>.</p>',
+             '<div class="rules">']
+    for k, v in rules:
+        parts.append(f'<div class="rule"><div class="k">{k}</div><div class="v">{v}</div></div>')
+    parts.append('</div><div class="legend">'
+                 '<span class="pill ok"><span class="dot"></span>implemented + tested</span>'
+                 '<span class="pill partial"><span class="dot"></span>partial / real-data pass</span>'
+                 '<span class="pill defer"><span class="dot"></span>deferred &mdash; contract only</span></div>')
+    for g in _CASCADE_GATES:
+        parts.append(_cascade_card(g))
+    parts.append('<p style="color:#8a8f98;font-size:12px;margin-top:22px">Source of truth: '
+                 '<span class="mono">config/gates.yaml</span> (move a threshold there and re-run &mdash; '
+                 'threshold sensitivity is a required deliverable). Full framing: '
+                 '<span class="mono">WARHEAD.md</span>.</p></div>')
+    return "".join(parts)
+
+
 def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_counts=None,
                      overlap_totals=None):
     from plotly.offline import get_plotlyjs
@@ -315,6 +488,8 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                 'cLogP-proxy window, not the Guo B-score (exatecan itself fails it, so read G4 as indicative); '
                 'G6 uses HPA with retina/spinal-cord proxies for cornea/nerve, on-target risk only '
                 '(FAERS class→tox pending).</p>')
+        elif sc["type"] == "cascade":
+            body.append(_cascade_div())
         elif sc["type"] == "pdxe":
             rk = sc["ranking"]
             colors = [RRB if v < 0 else _GREY for v in rk["median_response"]]
@@ -361,6 +536,41 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
     table.rank th{background:#6E1426;color:#fff;text-align:left;padding:6px 10px;position:sticky;top:0;cursor:pointer}
     table.rank td{padding:4px 10px;border-bottom:1px solid #eee}
     table.rank tbody tr:nth-child(even){background:#faf5f6}
+    /* --- Cascade (gate reference) tab --- */
+    .cascade{max-width:940px}
+    .cascade .intro{font-size:15px;color:#444;max-width:70ch;margin:2px 0 4px;line-height:1.55}
+    .cascade .intro b{color:#17181d;font-weight:600}
+    .cascade .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:20px 0 8px}
+    .cascade .rule{background:#fff;border:1px solid #eadfe2;border-radius:12px;padding:13px 15px}
+    .cascade .rule .k{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-bottom:3px;color:#17181d}
+    .cascade .rule .v{font-size:12.5px;color:#6b6268;line-height:1.42}
+    .cascade .legend{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:22px 0 4px;font-size:12.5px;color:#6b6268}
+    .cascade .pill{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:11.5px;padding:3px 10px;border-radius:999px}
+    .cascade .dot{width:8px;height:8px;border-radius:50%}
+    .cascade .pill.ok{color:#2E7D6B;background:#e6f1ee} .cascade .pill.ok .dot{background:#2E7D6B}
+    .cascade .pill.partial{color:#a06e1e;background:#f6ecd9} .cascade .pill.partial .dot{background:#B87C22}
+    .cascade .pill.defer{color:#7d828b;background:#eef0f2} .cascade .pill.defer .dot{background:#8A8F98}
+    .cascade .gate{background:#fff;border:1px solid #eadfe2;border-radius:16px;padding:22px 24px;margin:14px 0;box-shadow:0 1px 2px rgba(40,10,18,.04),0 6px 18px rgba(40,10,18,.045)}
+    .cascade .gate-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+    .cascade .badge{font-family:'Fraunces',serif;font-weight:600;font-size:14px;color:#fff;background:#6E1426;border-radius:8px;padding:5px 10px;line-height:1}
+    .cascade .gate-name{font-family:'Fraunces',serif;font-weight:500;font-size:23px;margin:0;flex:1 1 auto;color:#17181d}
+    .cascade .asks{font-size:15px;margin:12px 0 16px;color:#17181d;line-height:1.5}
+    .cascade .asks .q{color:#6E1426;font-weight:600}
+    .cascade dl.grid{display:grid;grid-template-columns:112px 1fr;gap:0 18px;font-size:14px;margin:0}
+    .cascade dl.grid dt{color:#6b6268;font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;padding-top:10px;border-top:1px solid #f0e7ea}
+    .cascade dl.grid dd{margin:0;padding-top:10px;border-top:1px solid #f0e7ea}
+    .cascade dl.grid dt.first,.cascade dl.grid dd.first{border-top:0;padding-top:2px}
+    .cascade .thr{font-family:'IBM Plex Mono',monospace;font-size:12.5px;background:#fbf6f7;border:1px solid #eadfe2;border-radius:7px;padding:8px 11px;display:block;line-height:1.7;white-space:pre-wrap;overflow-x:auto;margin:2px 0}
+    .cascade .thr b{color:#6E1426;font-weight:500}
+    .cascade .caveat{color:#6b6268;font-size:13px}
+    .cascade .g-sub{border-left:2px solid #dcced2;padding-left:18px;margin:20px 0 4px}
+    .cascade .g-sub + .g-sub{margin-top:24px}
+    .cascade .sub-name{font-family:'Fraunces',serif;font-weight:600;font-size:17px;margin:0 0 6px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;color:#17181d}
+    .cascade .sub-tag{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#6E1426;background:#f3e7ea;padding:2px 7px;border-radius:5px;font-weight:500}
+    .cascade .callout{background:#FBEFC7;border:1px solid #E4C868;color:#5A4410;border-radius:12px;padding:14px 16px;margin:18px 0 2px;font-size:13.5px;line-height:1.55}
+    .cascade .callout .ct{font-family:'Fraunces',serif;font-weight:600;font-size:14.5px;margin-bottom:5px}
+    .cascade .callout code{font-family:'IBM Plex Mono',monospace;font-size:.92em;background:rgba(90,68,16,.12);padding:1px 5px;border-radius:4px}
+    .cascade .mono{font-family:'IBM Plex Mono',monospace}
     """
     js = """
     function showTab(id){
@@ -382,7 +592,10 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
     """
     doc = (f"<!doctype html><html><head><meta charset='utf-8'>"
            f"<link rel='preconnect' href='https://fonts.googleapis.com'>"
-           f"<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap'>"
+           f"<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>"
+           f"<link rel='stylesheet' href='https://fonts.googleapis.com/css2?"
+           f"family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&"
+           f"family=IBM+Plex+Mono:wght@400;500&display=swap'>"
            f"<style>{css}</style><script>{get_plotlyjs()}</script></head><body>"
            f"<h1>WARHEAD - public drug-screen dashboard</h1>"
            f"<div class='sub'>EC90/IC50 potency, HCC/CRC selectivity and clinical/ADC context across five public screens. "

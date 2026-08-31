@@ -69,6 +69,9 @@ sel = pd.read_pickle("data/interim/nci60_crc_selectivity.pkl").sort_values("delt
 screens.append({"label": "NCI-60", "type": "nci60", "meta": meta.loc["NCI-60"].to_dict(),
                 "selectivity": _annotated(sel)})
 
+# gate-cascade reference (defines the G1-G6 the Conjugation tab applies)
+screens.append({"label": "Cascade", "type": "cascade", "meta": {}})
+
 out = render_dashboard(screens, out_path="reports/screens_dashboard.html", tested=tested,
                        venn_png=venn_png, overlap_counts=overlap_counts, overlap_totals=overlap_totals)
 print("wrote", out)

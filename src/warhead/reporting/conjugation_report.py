@@ -143,8 +143,8 @@ def render_scorecard(df: pd.DataFrame, *, out_path, indication="CRC", screen="CT
     fig.text(0.01, 0.006,
              "G5 handle necessary not SAR-verified; G4 a cLogP-proxy window, not the Guo B-score; G6 = target's "
              "HPA percentile in 5 DLT organs, win ✓ if ≤25 in all (on-target only; cornea/nerve via retina/spinal-"
-             "cord proxy; FAERS pending). No hit clears G1 free-drug -> chemotype for a potency campaign.",
-             fontsize=6.9, color="#777")
+             "cord proxy; FAERS pending). Free-drug IC50 != ADC IC50 - every output is a hypothesis for "
+             "conjugation, not a finished ADC.", fontsize=6.9, color="#777")
     fig.savefig(out_path, format=out_path.suffix.lstrip(".").lower() or "pdf", dpi=150)
     plt.close(fig)
     return out_path

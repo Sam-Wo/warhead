@@ -290,7 +290,7 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                         '"also in" column on each screen tab flags which of the other two libraries '
                         'contain each ranked compound.</p>')
         elif sc["type"] == "conjugation":
-            body.append('<h3>Conjugation-suitability ledger - CTRP v2 top-20 (CRC)</h3>')
+            body.append('<h3>Conjugation-suitability ledger - PRISM top-20 (CRC)</h3>')
             body.append(
                 '<p style="color:#444;font-size:13px;max-width:900px">Free-drug potency is not ADC '
                 'potency. Each column is a separate, <b>conjunctive</b> question a payload must pass '
@@ -299,18 +299,21 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
                 '<b>G4</b> bystander-permissive physchem; <b>G6</b> target not enriched in the DLT organs. '
                 '<b>✓</b> = passes, <b>✗</b> = fails, n/a = not assessable.</p>')
             body.append(
-                '<p style="color:#6E1426;font-size:13px;max-width:900px;font-weight:600">Headline: 0/20 '
-                'clear the G1 potency bar as free drugs (gaps of 0.5-2.2 logs), and 0/20 pass G6 - they '
-                'target broadly-essential machinery. The output is a chemotype for a potency campaign, not '
-                'a molecule to conjugate as-is; triptolide / CR-1-31B / dinaciclib / brefeldin A pass the '
-                'most delivery+chemistry gates.</p>')
+                '<p style="color:#6E1426;font-size:13px;max-width:900px;font-weight:600">The compounds that '
+                'clear the G1 potency bar are the validated payload chemotypes - exatecan-mesylate (0.1 nM, '
+                'the deruxtecan warhead, sitting in the table as a reference anchor), maytansinol, '
+                'dolastatin-10, plus gemcitabine and triptolide; most other hits are 1-1.5 logs short. All '
+                'fail G6 - their targets are broadly-essential machinery expressed throughout the DLT organs. '
+                'PRISM is used here (not CTRP) because its IC50 is calibrated so exatecan reads its true '
+                'sub-nM potency; CTRP reads ~4.7x weaker and would fail every payload against an absolute bar.</p>')
             body.append(_scorecard_table(sc["scorecard"]))
             body.append(
                 '<p style="color:#777;font-size:11.5px;max-width:900px">gap = log10 units the median IC50 '
-                'sits above 1 nM. G2a: log10 IC50 vs ABCB1/ABCG2 expression (std slope ≥0.25 &amp; q&lt;0.05 '
-                '= substrate). G2b: pan-panel Spearman vs DepMap growth (proxy; indicative). G5 handle is '
-                'necessary not SAR-verified; G4 is a cLogP-proxy window, not the Guo B-score; G6 uses HPA '
-                'expression with retina/spinal-cord proxies for cornea/nerve and covers on-target risk only '
+                'sits above 1 nM (negative = below the bar). G2a: log10 IC50 vs ABCB1/ABCG2 expression '
+                '(std slope ≥0.25 &amp; q&lt;0.05 = substrate). G2b: pan-panel Spearman vs DepMap growth '
+                '(proxy; per-compound calls are noisy). G5 handle is necessary not SAR-verified; G4 is a '
+                'cLogP-proxy window, not the Guo B-score (exatecan itself fails it, so read G4 as indicative); '
+                'G6 uses HPA with retina/spinal-cord proxies for cornea/nerve, on-target risk only '
                 '(FAERS class→tox pending).</p>')
         elif sc["type"] == "pdxe":
             rk = sc["ranking"]

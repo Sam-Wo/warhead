@@ -43,11 +43,13 @@ ctrp_curves = {"note": "CTRP measured, median + IQR across lines", "markers": Tr
                "pooled": ctrp_pooled, "summary": ctrp_curve_summary}
 curves_by_src = {"PRISM Repurposing (secondary)": prism_curves, "CTRP v2": ctrp_curves}
 
-# conjugation-suitability scorecard (CTRP CRC top-20) for the synthesis tab
-ctrp = cans["CTRP v2"]
-_sc = delivery_scorecard(ctrp, rank_potency(ctrp, "CRC", emax_max=0.5), clinical_tox_table(),
+# conjugation-suitability scorecard (PRISM CRC top-20) for the synthesis tab.
+# PRISM (not CTRP) for the G1 potency bar: its IC50 is calibrated so the reference
+# payloads read true (exatecan 0.1 nM); CTRP reads ~4.7x weaker.
+_pr = cans["PRISM Repurposing (secondary)"]
+_sc = delivery_scorecard(_pr, rank_potency(_pr, "CRC", emax_max=0.5), clinical_tox_table(),
                          indication="CRC", growth_fn=growth_lookup(), top=20)
-_sc = add_window(add_efflux(add_chemistry(_sc, fetch_smiles(_sc["compound"].tolist())), ctrp))
+_sc = add_window(add_efflux(add_chemistry(_sc, fetch_smiles(_sc["compound"].tolist())), _pr))
 
 screens = [{"label": "Overlap", "type": "overlap", "meta": {}},        # placeholder meta (skipped below)
            {"label": "Conjugation", "type": "conjugation", "meta": {}, "scorecard": _sc}]

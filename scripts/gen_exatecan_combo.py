@@ -17,12 +17,14 @@ import re
 import numpy as np
 import pandas as pd
 
-from warhead.analysis.exatecan_combo import TOP1I, combo_scores, slfn11_dependence
+from warhead.analysis.exatecan_combo import (TOP1I, combo_scores, mechanism_axis,
+                                            slfn11_dependence)
 from warhead.analysis.tahoe_moa import moa_distance_table
 from warhead.io.pubchem import fetch_smiles
 from warhead.reporting.exatecan_combo_plot import (render_combo_consensus,
                                                    render_moa_orthogonality,
-                                                   render_slfn11_orthogonality)
+                                                   render_slfn11_orthogonality,
+                                                   render_two_paths)
 
 
 def _norm(s):
@@ -41,6 +43,14 @@ m["consensus"] = m["combo_score_p"] + m["combo_score_c"]
 m = m.sort_values("consensus", ascending=False).reset_index(drop=True)
 print("axis 1: complementary coverage -", len(m), "compounds scored in both screens")
 print("  wrote", render_combo_consensus(m, out_path="reports/exatecan_partners_map.pdf"))
+
+# --- the narrative: two paths (orthogonality coverage vs mechanistic potentiation) ---
+# scored on PRISM (widest DDR/arrest coverage). wetlab={compound_norm: 'synergy'|'antagonism'}
+# overlays measured outcomes as rings once available.
+Pm = P.copy()
+Pm[["ddr", "arrest"]] = Pm.apply(lambda r: pd.Series(mechanism_axis(r["target"], r.get("moa", ""))), axis=1)
+WETLAB = None                                                # <- drop in {norm(compound): outcome}
+print("  wrote", render_two_paths(Pm, out_path="reports/exatecan_two_paths.pdf", wetlab=WETLAB))
 
 # --- axis 2: SLFN11 resistance orthogonality ---
 ge = pd.read_csv("data/interim/depmap_genes.csv")

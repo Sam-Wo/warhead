@@ -79,6 +79,77 @@ def render_combo_consensus(merged: pd.DataFrame, *, out_path, label_top=15) -> P
     return out_path
 
 
+def render_two_paths(df: pd.DataFrame, *, out_path, wetlab=None) -> Path:
+    """The narrative slide. df: compound, target, combo_score (orthogonality / coverage),
+    ddr, arrest (mechanism scores). x = coverage (Path 1); y = mechanism axis (arrest
+    below = antagonism risk, DDR above = potentiation/synergy). `wetlab`: optional dict
+    {compound_norm: 'synergy'|'antagonism'} to overlay measured outcomes as ring markers."""
+    import re
+    out_path = Path(out_path); out_path.parent.mkdir(parents=True, exist_ok=True)
+    d = df.copy()
+    d["y"] = d["ddr"] - d["arrest"]
+    rng = np.random.RandomState(3)
+    d["yj"] = d["y"] + rng.uniform(-.28, .28, len(d))
+
+    def _c(r):
+        if r["ddr"] > 0 and r["ddr"] >= r["arrest"]:
+            return "DDR / checkpoint (synergy-plausible)", "#2E7D6B"
+        if r["arrest"] > 0:
+            return "cell-cycle arrest (antagonism risk)", "#C0392B"
+        return "other", "#C9CDD3"
+    d[["cls", "col"]] = d.apply(lambda r: pd.Series(_c(r)), axis=1)
+
+    fig, ax = plt.subplots(figsize=(12, 8.2))
+    ax.axhspan(0.5, d["y"].max() + 1, color="#e9f3ef", zorder=0)
+    ax.axhspan(d["y"].min() - 1, -0.5, color="#fbecea", zorder=0)
+    ax.axhline(0, color="#ccc", lw=1)
+    for kind, sub in d.groupby("cls"):
+        ax.scatter(sub["combo_score"], sub["yj"], s=np.where(sub["cls"] == "other", 14, 46),
+                   c=sub["col"], alpha=.6 if kind == "other" else .85,
+                   edgecolor="white", linewidth=.3, zorder=2)
+    # label the exemplars: top DDR (by ddr then coverage) and high-coverage arrest
+    lab = pd.concat([d[d["ddr"] > 0].sort_values(["ddr", "combo_score"], ascending=False).head(9),
+                     d[(d["arrest"] > 0) & (d["combo_score"] > 2)].sort_values("combo_score", ascending=False).head(8)])
+    for _, r in lab.drop_duplicates("compound").iterrows():
+        ax.annotate(r["compound"], (r["combo_score"], r["yj"]), xytext=(4, 3), textcoords="offset points",
+                    fontsize=8.2, fontweight="bold", color="#222", zorder=6)
+    if wetlab:
+        d["k"] = d["compound"].map(lambda s: re.sub(r"[^a-z0-9]", "", str(s).lower()))
+        for _, r in d[d["k"].isin(wetlab)].iterrows():
+            oc = wetlab[r["k"]]
+            ax.scatter([r["combo_score"]], [r["yj"]], s=230, facecolor="none",
+                       edgecolor="#1b7a3d" if oc == "synergy" else "#B01818", linewidth=2.4, zorder=7)
+
+    ax.text(0.015, 0.97, "Path 2 — mechanistic SYNERGY\nDDR / checkpoint inhibition potentiates the damage",
+            transform=ax.transAxes, fontsize=10, color="#2E7D6B", va="top", fontweight="bold")
+    ax.text(0.985, 0.03, "Path 1 — orthogonality TRAP\ncoverage looks great, but cell-cycle arrest pulls cells\n"
+            "out of S-phase and antagonises the S-phase-specific Top1i",
+            transform=ax.transAxes, fontsize=10, color="#C0392B", va="bottom", ha="right", fontweight="bold")
+    ax.set_xlabel("orthogonality  /  complementary coverage   (Path 1 score)   →", fontsize=11)
+    ax.set_ylabel("←  cell-cycle arrest  (antagonism)        mechanism        DDR / checkpoint  (synergy)  →", fontsize=10.5)
+    ax.set_title("Two paths to an exatecan dual-payload partner", color=RRB, fontsize=15, fontweight="bold",
+                 loc="left", pad=12)
+    ax.text(0.5, -0.115, "x = potent on Top1i-resistant lines + orthogonal response (PRISM).  y = target engagement of the "
+            "DDR/replication-stress checkpoint (up) vs the cell-cycle-arrest machinery (down).\nKey point: the orthogonality "
+            "axis alone favours the arrest agents (mean coverage +0.20) and buries the DDR synergisers (mean -0.20) — you "
+            "need the mechanism axis to surface Path 2.", transform=ax.transAxes, ha="center", va="top", fontsize=7.9, color="#666")
+    handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=c, markersize=10, label=n)
+               for n, c in [("DDR / checkpoint (synergy-plausible)", "#2E7D6B"),
+                            ("cell-cycle arrest (antagonism risk)", "#C0392B"), ("other", "#C9CDD3")]]
+    if wetlab:
+        handles += [Line2D([0], [0], marker="o", color="w", markerfacecolor="none", markeredgecolor="#1b7a3d",
+                           markeredgewidth=2, markersize=12, label="wetlab: synergy"),
+                    Line2D([0], [0], marker="o", color="w", markerfacecolor="none", markeredgecolor="#B01818",
+                           markeredgewidth=2, markersize=12, label="wetlab: antagonism")]
+    ax.legend(handles=handles, loc="lower left", fontsize=8.4, frameon=False)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    fig.tight_layout(rect=[0, 0.05, 1, 1])
+    fig.savefig(out_path, format=out_path.suffix.lstrip(".").lower() or "pdf", dpi=160)
+    plt.close(fig)
+    return out_path
+
+
 def render_moa_orthogonality(matched: pd.DataFrame, *, anchor_dist, out_path, label_top=16) -> Path:
     """matched: compound, target, combo (consensus complementarity score), moa_distance
     (Tahoe distance from Top1i). Shows top partners engage a transcriptional program

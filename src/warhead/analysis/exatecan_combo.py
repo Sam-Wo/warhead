@@ -88,6 +88,41 @@ def combo_scores(canonical: pd.DataFrame, *, anchors=TOP1I, min_shared=50,
     return df.sort_values("combo_score", ascending=False).reset_index(drop=True)
 
 
+# --- mechanistic potentiation vs antagonism, from target annotation --------------
+# Path 2 (true synergy): inhibit the DDR / replication-stress checkpoint that RESOLVES
+# Top1i damage -> forces damaged cells through replication into mitotic catastrophe.
+DDR_TARGETS = {"ATR", "ATRIP", "CHEK1", "CHEK2", "WEE1", "ATM", "PRKDC", "TOPBP1", "CLSPN",
+               "PARP1", "PARP2", "PARP3", "PARP", "RAD51", "BRCA1", "BRCA2", "MRE11", "MRE11A",
+               "RAD50", "NBN", "POLQ", "RRM1", "RRM2", "PLK4"}
+_DDR_KEYS = ("ATR", "CHK", "CHEK", "WEE1", "PARP", "DNA-PK", "DNAPK", "ATM ", "CHECKPOINT",
+             "DNA DAMAGE", "DNA REPAIR", "HOMOLOGOUS RECOMB", "REPLICATION STRESS")
+# Path 1 trap (antagonism risk): arrest the cycle -> pull cells OUT of S-phase ->
+# protect from the S-phase-specific Top1i (a schedule collision).
+ARREST_TARGETS = {"CDK1", "CDK2", "CDK4", "CDK6", "CDK7", "CDK9", "CCNB1", "KIF11", "KSP",
+                  "AURKA", "AURKB", "AURKC", "PLK1", "BIRC5", "TUBB", "TUBB1", "TUBB3", "TUBB4A",
+                  "TUBB4B", "TUBA1A", "TUBA1B", "TUBA1C", "TUBA3C", "TUBA4A", "TUBA8", "TUBD1"}
+_ARREST_KEYS = ("TUBULIN", "MICROTUBULE", "MITOT", "KINESIN", "AURORA", "PLK", "CDK",
+                "CYCLIN-DEPENDENT", "SURVIVIN")
+
+
+def _hits(target, moa, gene_set, keys):
+    ts = set(re.split(r"[;,/\s]+", str(target).upper()))
+    n_genes = len(ts & gene_set)
+    kw = 1 if any(k in (str(target) + " " + str(moa)).upper() for k in keys) else 0
+    return n_genes, kw
+
+
+def mechanism_axis(target, moa=""):
+    """(ddr_score, arrest_score): DDR/checkpoint engagement (Path-2 synergy) and
+    cell-cycle-arrest liability (Path-1 antagonism). Simple, interpretable target/MOA
+    hits - a mechanistic prior, not a data fit."""
+    dg, dk = _hits(target, moa, DDR_TARGETS, _DDR_KEYS)
+    ag, ak = _hits(target, moa, ARREST_TARGETS, _ARREST_KEYS)
+    ddr = min(dg, 3) + dk
+    arrest = min(ag, 3) + ak
+    return float(ddr), float(arrest)
+
+
 def slfn11_dependence(canonical: pd.DataFrame, gene_expr: pd.DataFrame, *, gene="SLFN11",
                       low_q=1.0 / 3, min_shared=30) -> pd.DataFrame:
     """Per-compound dependence on SLFN11 - the axis that drives Top1i sensitivity.

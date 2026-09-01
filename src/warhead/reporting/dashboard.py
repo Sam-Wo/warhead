@@ -609,30 +609,42 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
       document.getElementById('btn_'+id).classList.add('active');
       document.querySelectorAll('#'+id+' .js-plotly-plot').forEach(d=>{try{Plotly.Plots.resize(d);}catch(e){}});
     }
+    const _HOVER="<b>%{customdata[0]}</b><br>target: %{customdata[1]}<br>clinical: %{customdata[2]}"
+      +"<br>median IC50: %{customdata[3]} nM<br>Δpotency %{customdata[4]}  q %{customdata[5]}<extra></extra>";
     function highlightCompound(q){
       q=(q||'').trim().toLowerCase(); let hits=0;
       document.querySelectorAll('.js-plotly-plot').forEach(gd=>{
-        if(!gd.data||!gd.layout) return;
-        const anns=[];
-        if(q.length>=2){
-          gd.data.forEach(tr=>{
-            if(!tr.customdata||!tr.x||!tr.y) return;
-            for(let i=0;i<tr.customdata.length;i++){
-              const cd=tr.customdata[i];
-              if(cd&&String(cd[0]).toLowerCase().indexOf(q)>-1){
-                hits++;
-                anns.push({x:tr.x[i],y:tr.y[i],xref:tr.xaxis||'x',yref:tr.yaxis||'y',
-                  text:'<b>'+cd[0]+'</b>',showarrow:true,arrowhead:2,arrowsize:1,arrowwidth:1.4,
-                  arrowcolor:'#6E1426',ax:0,ay:-30,font:{color:'#6E1426',size:11},
-                  bgcolor:'rgba(255,255,255,.9)',bordercolor:'#6E1426',borderwidth:1,borderpad:2});
-              }
+        if(!gd.data) return;
+        // remove any previous highlight overlay traces
+        const kill=[]; gd.data.forEach((t,i)=>{ if(t.name==='__hl__') kill.push(i); });
+        if(kill.length){ try{Plotly.deleteTraces(gd,kill);}catch(e){} }
+        if(q.length<2) return;
+        // plotly stores x/y as base64 typed-array objects on gd.data; the DECODED
+        // numeric arrays are on gd._fullData - read coordinates from there.
+        const full=gd._fullData||gd.data;
+        const bySub={};
+        gd.data.forEach((tr,ti)=>{
+          if(!tr.customdata||tr.name==='__hl__') return;
+          const F=full[ti]||tr, fx=F.x, fy=F.y;
+          if(!fx||!fy) return;
+          const xa=F.xaxis||tr.xaxis||'x', ya=F.yaxis||tr.yaxis||'y';
+          for(let i=0;i<tr.customdata.length;i++){
+            const cd=tr.customdata[i];
+            if(cd&&String(cd[0]).toLowerCase().indexOf(q)>-1){
+              const k=xa+'|'+ya;
+              (bySub[k]=bySub[k]||{x:[],y:[],cd:[]});
+              bySub[k].x.push(fx[i]); bySub[k].y.push(fy[i]); bySub[k].cd.push(cd); hits++;
             }
-          });
-        }
-        try{Plotly.relayout(gd,{annotations:anns});}catch(e){}
+          }
+        });
+        const add=Object.keys(bySub).map(k=>{const a=k.split('|'),s=bySub[k];
+          return {name:'__hl__',type:'scatter',mode:'markers',xaxis:a[0],yaxis:a[1],
+            x:s.x,y:s.y,customdata:s.cd,showlegend:false,hovertemplate:_HOVER,cliponaxis:false,
+            marker:{size:22,symbol:'circle-open',color:'#0A84FF',line:{color:'#0A84FF',width:3.5}}};});
+        if(add.length){ try{Plotly.addTraces(gd,add);}catch(e){} }
       });
       const h=document.getElementById('searchHits');
-      if(h) h.textContent = q.length<2 ? '' : (hits? hits+' point'+(hits>1?'s':'')+' labelled' : 'no match');
+      if(h) h.textContent = q.length<2 ? '' : (hits? hits+' point'+(hits>1?'s':'')+' highlighted (hover for detail)' : 'no match');
     }
     document.querySelectorAll('table.rank th').forEach((th,ci)=>th.addEventListener('click',()=>{
       const tb=th.closest('table').querySelector('tbody');

@@ -547,6 +547,11 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
     body{font-family:'IBM Plex Sans',system-ui,sans-serif;margin:0;color:#17181d;background:#faf9fa}
     h1{color:#6E1426;padding:18px 26px 6px;margin:0}
     .sub{padding:0 26px 10px;color:#666;font-size:13px}
+    .searchbar{padding:0 26px 12px;display:flex;align-items:center;gap:10px}
+    .searchbar input{width:min(460px,70vw);padding:8px 12px;font-size:13px;font-family:inherit;
+      border:1px solid #d8c7cc;border-radius:8px;background:#fff;color:#17181d;outline:none}
+    .searchbar input:focus{border-color:#6E1426;box-shadow:0 0 0 2px rgba(110,20,38,.12)}
+    .searchbar .hits{font-size:12px;color:#888}
     .tabbar{display:flex;gap:4px;padding:0 20px;border-bottom:2px solid #eadfe2;flex-wrap:wrap}
     .tab-btn{border:none;background:none;padding:11px 18px;font-size:14px;font-weight:600;color:#888;cursor:pointer;border-bottom:3px solid transparent}
     .tab-btn.active{color:#6E1426;border-bottom-color:#6E1426}
@@ -604,6 +609,31 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
       document.getElementById('btn_'+id).classList.add('active');
       document.querySelectorAll('#'+id+' .js-plotly-plot').forEach(d=>{try{Plotly.Plots.resize(d);}catch(e){}});
     }
+    function highlightCompound(q){
+      q=(q||'').trim().toLowerCase(); let hits=0;
+      document.querySelectorAll('.js-plotly-plot').forEach(gd=>{
+        if(!gd.data||!gd.layout) return;
+        const anns=[];
+        if(q.length>=2){
+          gd.data.forEach(tr=>{
+            if(!tr.customdata||!tr.x||!tr.y) return;
+            for(let i=0;i<tr.customdata.length;i++){
+              const cd=tr.customdata[i];
+              if(cd&&String(cd[0]).toLowerCase().indexOf(q)>-1){
+                hits++;
+                anns.push({x:tr.x[i],y:tr.y[i],xref:tr.xaxis||'x',yref:tr.yaxis||'y',
+                  text:'<b>'+cd[0]+'</b>',showarrow:true,arrowhead:2,arrowsize:1,arrowwidth:1.4,
+                  arrowcolor:'#6E1426',ax:0,ay:-30,font:{color:'#6E1426',size:11},
+                  bgcolor:'rgba(255,255,255,.9)',bordercolor:'#6E1426',borderwidth:1,borderpad:2});
+              }
+            }
+          });
+        }
+        try{Plotly.relayout(gd,{annotations:anns});}catch(e){}
+      });
+      const h=document.getElementById('searchHits');
+      if(h) h.textContent = q.length<2 ? '' : (hits? hits+' point'+(hits>1?'s':'')+' labelled' : 'no match');
+    }
     document.querySelectorAll('table.rank th').forEach((th,ci)=>th.addEventListener('click',()=>{
       const tb=th.closest('table').querySelector('tbody');
       const rows=[...tb.rows];
@@ -624,6 +654,9 @@ def render_dashboard(screens, *, out_path, tested=None, venn_png=None, overlap_c
            f"<h1>WARHEAD - public drug-screen dashboard</h1>"
            f"<div class='sub'>EC90/IC50 potency, HCC/CRC selectivity and clinical/ADC context across five public screens. "
            f"Click a tab; hover points; click a table header to sort.</div>"
+           f"<div class='searchbar'><input id='cmpdSearch' oninput='highlightCompound(this.value)' "
+           f"placeholder='search a compound - label it across every selectivity plot (e.g. daporinad)' autocomplete='off'>"
+           f"<span id='searchHits' class='hits'></span></div>"
            f"<div class='tabbar'>{''.join(tabs_btn)}</div>{''.join(tabs_div)}"
            f"<script>{js}\nshowTab('{first}');</script></body></html>")
     out_path.write_text(doc, encoding="utf-8")
